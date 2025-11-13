@@ -8,6 +8,8 @@ export async function POST(req: Request) {
   try {
     const { name, email, password } = await req.json();
 
+    console.log("Request body:", { name, email, password }); // Debug log
+
     if (!email || !password) {
       return NextResponse.json({ error: "Täytä kaikki kentät" }, { status: 400 });
     }
@@ -22,8 +24,11 @@ export async function POST(req: Request) {
       data: { name, email, passwordHash },
     });
 
+    console.log("User created:", user); // Debug log
+
     return NextResponse.json({ user });
   } catch (err) {
+    console.error("Error during registration:", err); // Debug log
     return NextResponse.json({ error: "Rekisteröinti epäonnistui" }, { status: 500 });
   }
 }
