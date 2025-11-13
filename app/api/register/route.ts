@@ -9,6 +9,7 @@ export async function POST(req: Request) {
     const { name, email, password } = await req.json();
 
     console.log("Request body:", { name, email, password }); // Debug log
+    console.log("DATABASE_URL:", process.env.DATABASE_URL); // Debug log to verify environment variable
 
     if (!email || !password) {
       return NextResponse.json({ error: "Täytä kaikki kentät" }, { status: 400 });
