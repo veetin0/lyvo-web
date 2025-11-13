@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "next-auth";
+import { getToken } from "next-auth/jwt";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
@@ -9,13 +9,13 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id } = await context.params; // ✅ puretaan id yhdellä kertaa
-  const session = await auth();
+  const token = await getToken({ req: req as any });
 
-  if (!session || !session.user) {
+  if (!token) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const userId = (session.user as { id?: string }).id;
+  const userId = (token as any).id as string | undefined;
 
   if (!userId) {
     return NextResponse.json({ error: "User ID missing" }, { status: 400 });

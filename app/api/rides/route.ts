@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
-import { auth } from "@/auth";
+import { getToken } from "next-auth/jwt";
 
 const prisma = new PrismaClient();
 
@@ -27,24 +27,24 @@ export async function GET() {
 // --- LISÄÄ KYYTI ---
 export async function POST(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.email) {
+    const token = await getToken({ req: req as any });
+    if (!token?.email) {
       console.error("Käyttäjä ei kirjautunut sisään.");
       return NextResponse.json({ error: "Ei kirjautunut" }, { status: 401 });
     }
 
     const body = await req.json();
     console.log("POST body:", body);
-    console.log("Session user:", session.user);
+    console.log("Token user:", token);
 
     const { from, to, date, time, price, seats, car, options, info } = body;
 
     const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
+      where: { email: token.email },
     });
 
     if (!user) {
-      console.error("Käyttäjää ei löytynyt tietokannasta:", session.user.email);
+      console.error("Käyttäjää ei löytynyt tietokannasta:", token.email);
       return NextResponse.json({ error: "Käyttäjää ei löytynyt" }, { status: 404 });
     }
 
@@ -75,8 +75,8 @@ export async function POST(req: Request) {
 // --- POISTA KYYTI ---
 export async function DELETE(req: Request) {
   try {
-    const session = await auth();
-    if (!session?.user?.email) {
+    const token = await getToken({ req: req as any });
+    if (!token?.email) {
       return NextResponse.json({ error: "Ei kirjautunut" }, { status: 401 });
     }
 
@@ -88,7 +88,7 @@ export async function DELETE(req: Request) {
     }
 
     const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
+      where: { email: token.email },
     });
 
     if (!user) {

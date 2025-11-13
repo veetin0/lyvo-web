@@ -1,19 +1,18 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
-import { auth } from "next-auth";
+import { getToken } from "next-auth/jwt";
 
 const prisma = new PrismaClient();
 
 // 📌 GET – Hae kirjautuneen käyttäjän varaukset
-export async function GET(): Promise<NextResponse> {
+export async function GET(req: Request): Promise<NextResponse> {
   try {
-    const session = await auth();
-    if (!session?.user?.email) {
+  const token = await getToken({ req: req as any });
+    if (!token?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
     const bookings = await prisma.booking.findMany({
-      where: { user: { email: session.user.email } },
+      where: { user: { email: token.email as string } },
       include: { ride: true },
     });
 
@@ -27,8 +26,8 @@ export async function GET(): Promise<NextResponse> {
 // 📌 POST – Tee varaus
 export async function POST(req: Request): Promise<NextResponse> {
   try {
-    const session = await auth();
-    if (!session?.user?.email) {
+  const token = await getToken({ req: req as any });
+    if (!token?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -38,7 +37,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     }
 
     const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
+      where: { email: token.email as string },
     });
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });

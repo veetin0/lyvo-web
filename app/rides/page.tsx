@@ -22,7 +22,7 @@ interface Ride {
     name: string;
     rating: number;
   };
-  seats?: number;
+  seats: number | null;
 }
 
 const supabase = createClient(
