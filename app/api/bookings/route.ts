@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "../auth/[...nextauth]/route";
 import { PrismaClient } from "@prisma/client";
+import { auth } from "next-auth";
 
 const prisma = new PrismaClient();
 
 // 📌 GET – Hae kirjautuneen käyttäjän varaukset
 export async function GET(): Promise<NextResponse> {
   try {
-    const session = await getServerSession(authOptions) as { user?: { email?: string; id?: string } } | null;
+    const session = await auth();
     if (!session?.user?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -28,7 +27,7 @@ export async function GET(): Promise<NextResponse> {
 // 📌 POST – Tee varaus
 export async function POST(req: Request): Promise<NextResponse> {
   try {
-    const session = await getServerSession(authOptions) as { user?: { email?: string; id?: string } } | null;
+    const session = await auth();
     if (!session?.user?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

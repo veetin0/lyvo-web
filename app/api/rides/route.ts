@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "../auth/[...nextauth]/route";
+import { auth } from "@/auth";
 
 const prisma = new PrismaClient();
 
@@ -28,7 +27,7 @@ export async function GET() {
 // --- LISÄÄ KYYTI ---
 export async function POST(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await auth();
     if (!session?.user?.email) {
       console.error("Käyttäjä ei kirjautunut sisään.");
       return NextResponse.json({ error: "Ei kirjautunut" }, { status: 401 });
@@ -76,7 +75,7 @@ export async function POST(req: Request) {
 // --- POISTA KYYTI ---
 export async function DELETE(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await auth();
     if (!session?.user?.email) {
       return NextResponse.json({ error: "Ei kirjautunut" }, { status: 401 });
     }
