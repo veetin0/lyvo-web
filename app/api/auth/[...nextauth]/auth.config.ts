@@ -1,7 +1,8 @@
 import Credentials from "next-auth/providers/credentials";
+import type { NextAuthConfig } from "next-auth";
 import { supabase } from "@/lib/supabase";
 
-export default {
+const authConfig: NextAuthConfig = {
   providers: [
     Credentials({
       name: "Credentials",
@@ -31,10 +32,14 @@ export default {
       }
     })
   ],
+
   pages: {
-    signIn: "/auth/login"
+    signIn: "/auth/login",
   },
+
   session: {
-    strategy: "jwt"
-  }
+    strategy: "jwt",
+  },
 };
+
+export default authConfig;

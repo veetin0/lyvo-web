@@ -1,16 +1,16 @@
 import NextAuth from "next-auth";
-import Credentials from "next-auth/providers/credentials";
+import CredentialsProvider from "next-auth/providers/credentials";
 import { supabase } from "@/lib/supabase";
 
-const authHandler = NextAuth({
+export const { GET, POST } = NextAuth({
   providers: [
-    Credentials({
+    CredentialsProvider({
       name: "Credentials",
       credentials: {
         email: { label: "Sähköposti", type: "email" },
         password: { label: "Salasana", type: "password" }
       },
-      authorize: async (credentials) => {
+      async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
         const { data: user, error } = await supabase
@@ -36,9 +36,7 @@ const authHandler = NextAuth({
 
   callbacks: {
     async jwt({ token, user }) {
-      if (user) {
-        token.id = user.id;
-      }
+      if (user) token.id = user.id;
       return token;
     },
 
@@ -50,6 +48,3 @@ const authHandler = NextAuth({
     },
   },
 });
-
-// Export only what API routes accept
-export const { GET, POST } = authHandler;
