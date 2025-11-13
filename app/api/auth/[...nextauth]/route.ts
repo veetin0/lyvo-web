@@ -2,7 +2,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { supabase } from "@/lib/supabase";
 
-export const { handlers: { GET, POST }, auth } = NextAuth({
+const authHandler = NextAuth({
   providers: [
     Credentials({
       name: "Credentials",
@@ -20,9 +20,6 @@ export const { handlers: { GET, POST }, auth } = NextAuth({
           .maybeSingle();
 
         if (error || !user) return null;
-
-        // Tarkista salasana hash tässä (jos sinulla on bcrypt käytössä)
-        // if (!(await bcrypt.compare(credentials.password, user.passwordHash))) return null;
 
         return {
           id: user.id,
@@ -47,9 +44,12 @@ export const { handlers: { GET, POST }, auth } = NextAuth({
 
     async session({ session, token }) {
       if (token?.id) {
-        session.user.id = token.id;
+        (session.user as any).id = token.id;
       }
       return session;
     },
   },
 });
+
+// Export only what API routes accept
+export const { GET, POST } = authHandler;
