@@ -1,0 +1,14 @@
+{
+  "header": {
+    "rides": "Find a Ride",
+    "newRide": "Add a Ride",
+    "about": "About",
+    "contact": "Contact",
+    "profile": "Profile",
+    "logout": "Sign Out"
+  },
+  "home": {
+    "title": "Shade — eco-friendly carpooling",
+    "subtitle": "Find or add rides easily across the Nordics."
+  }
+}

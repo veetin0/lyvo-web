@@ -1,0 +1,14 @@
+{
+  "header": {
+    "rides": "Etsi kyyti",
+    "newRide": "Lisää kyyti",
+    "about": "Tietoa meistä",
+    "contact": "Ota yhteyttä",
+    "profile": "Profiili",
+    "logout": "Kirjaudu ulos"
+  },
+  "home": {
+    "title": "Shade — ekologiset kimppakyydit",
+    "subtitle": "Löydä tai lisää kyyti helposti Suomessa ja Pohjoismaissa."
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "header": {
+    "rides": "Hitta skjuts",
+    "newRide": "Lägg till skjuts",
+    "about": "Om oss",
+    "contact": "Kontakta oss",
+    "profile": "Profil",
+    "logout": "Logga ut"
+  },
+  "home": {
+    "title": "Shade — miljövänliga samåkningar",
+    "subtitle": "Hitta eller erbjud skjuts enkelt i Finland och Norden."
+  }
+}
