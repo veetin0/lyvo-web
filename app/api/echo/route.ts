@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
 
 export async function GET() {
-  return NextResponse.json({ ok: true, app: "shade-web" });
+  return NextResponse.json({ ok: true, app: "lyvo-web" });
 }

@@ -34,7 +34,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-[#eaf8ec]/40 to-white">
       <div className="bg-white/80 backdrop-blur-lg p-8 rounded-2xl shadow-lg w-full max-w-md">
         <h1 className="text-3xl font-bold text-[#21a53f] mb-6 text-center">
-          Kirjaudu Shadeen
+          Kirjaudu Lyvoon
         </h1>
 
         <form onSubmit={handleSubmit} className="space-y-4">
