@@ -1,33 +1,51 @@
-import NextAuth from "next-auth";
+import NextAuth from "next-auth/next";
+import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { supabase } from "@/lib/supabase";
+import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
 
-export const { GET, POST } = NextAuth({
+const prisma = new PrismaClient();
+
+const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
       name: "Credentials",
       credentials: {
         email: { label: "Sähköposti", type: "email" },
-        password: { label: "Salasana", type: "password" }
+        password: { label: "Salasana", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) return null;
+        if (!credentials?.email || !credentials?.password) {
+          return null;
+        }
 
-        const { data: user, error } = await supabase
-          .from("users")
-          .select("*")
-          .eq("email", credentials.email)
-          .maybeSingle();
+        // Haetaan käyttäjä Prismasta
+        const user = await prisma.user.findUnique({
+          where: { email: credentials.email },
+        });
 
-        if (error || !user) return null;
+        if (!user) {
+          return null;
+        }
 
+        // Tarkistetaan salasana
+        const isValid = await bcrypt.compare(
+          credentials.password,
+          user.passwordHash
+        );
+
+        if (!isValid) {
+          return null;
+        }
+
+        // Palautetaan NextAuthille kevyempi user-olio
         return {
           id: user.id,
           email: user.email,
-          name: user.name
+          name: user.name,
         };
-      }
-    })
+      },
+    }),
   ],
 
   session: {
@@ -36,15 +54,27 @@ export const { GET, POST } = NextAuth({
 
   callbacks: {
     async jwt({ token, user }) {
-      if (user) token.id = user.id;
+      // kun käyttäjä kirjautuu, talletetaan id tokeniin
+      if (user) {
+        (token as any).id = (user as any).id;
+      }
       return token;
     },
 
     async session({ session, token }) {
-      if (token?.id) {
-        (session.user as any).id = token.id;
+      // lisätään session.user.id, jotta voit käyttää sitä frontissa
+      if (token && session.user) {
+        (session.user as any).id = (token as any).id;
       }
       return session;
     },
   },
-});
+
+  pages: {
+    signIn: "/auth/login",
+  },
+};
+
+const handler = NextAuth(authOptions);
+
+export { handler as GET, handler as POST };
