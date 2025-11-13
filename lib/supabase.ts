@@ -1,16 +1,6 @@
-import { createServerClient } from '@supabase/ssr';
-import { cookies as nextCookies } from 'next/headers';
+import { createClient } from '@supabase/supabase-js';
 
-const resolvedCookies = await nextCookies();
-
-const cookies = {
-  get: (name: string) => resolvedCookies.get(name)?.value,
-  set: () => {},
-  delete: () => {},
-};
-
-export const supabase = createServerClient(
+export const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  { cookies }
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
