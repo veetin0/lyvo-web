@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' }); // Explicitly load .env.local
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   eslint: {
