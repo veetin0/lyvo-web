@@ -8,17 +8,16 @@ datasource db {
 }
 
 model User {
-  id           String    @id @default(cuid())
+  id           String   @id @default(cuid())
   name         String
-  email        String    @unique
+  email        String   @unique
   passwordHash String
-  rides        Ride[]    @relation("UserRides")
-  createdAt    DateTime  @default(now())
-  Booking      Booking[]
+  createdAt    DateTime @default(now())
+  rides        Ride[]   @relation("UserRides")
 }
 
 model Ride {
-  id        String    @id @default(cuid())
+  id        String   @id @default(cuid())
   from      String
   to        String
   date      String
@@ -26,20 +25,9 @@ model Ride {
   price     Float
   seats     Int
   car       String
-  options   String    @default("[]")
+  options   String   @default("[]")
   info      String?
   driverId  String
-  driver    User      @relation("UserRides", fields: [driverId], references: [id])
-  createdAt DateTime  @default(now())
-  Booking   Booking[]
-}
-
-model Booking {
-  id        String   @id @default(uuid())
-  rideId    String
-  userId    String
   createdAt DateTime @default(now())
-
-  ride Ride @relation(fields: [rideId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  driver    User     @relation("UserRides", fields: [driverId], references: [id])
 }
