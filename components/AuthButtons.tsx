@@ -24,13 +24,7 @@ export default function AuthButtons() {
   }
 
   const handleSignIn = async () => {
-    const res = await signIn("credentials", { redirect: false });
-    if (res?.error) {
-      console.error("Sign-in error:", res.error);
-      alert("Kirjautuminen epäonnistui. Tarkista sähköposti ja salasana.");
-    } else {
-      router.push("/");
-    }
+    router.push("/auth/login");
   };
 
   return (
