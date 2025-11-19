@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { getToken } from "next-auth/jwt";
+import { createClient } from "@supabase/supabase-js";
 
 const prisma = new PrismaClient();
 
@@ -87,25 +88,37 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ error: "Kyydin ID puuttuu" }, { status: 400 });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: token.email },
-    });
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
 
-    if (!user) {
-      return NextResponse.json({ error: "Käyttäjää ei löytynyt" }, { status: 404 });
+    // Get the ride to check ownership
+    const { data: ride, error: rideError } = await supabase
+      .from("rides")
+      .select("id, owner")
+      .eq("id", id)
+      .single();
+
+    if (rideError || !ride) {
+      return NextResponse.json({ error: "Kyytiä ei löytynyt" }, { status: 404 });
     }
 
-    const ride = await prisma.ride.findUnique({
-      where: { id },
-    });
-
-    if (!ride || ride.driverId !== user.id) {
+    // Check if user is the owner (use token.id since that's the user ID)
+    if (ride.owner !== token.id) {
       return NextResponse.json({ error: "Ei oikeutta poistaa tätä kyytiä" }, { status: 403 });
     }
 
-    await prisma.ride.delete({
-      where: { id },
-    });
+    // Delete the ride
+    const { error: deleteError } = await supabase
+      .from("rides")
+      .delete()
+      .eq("id", id);
+
+    if (deleteError) {
+      console.error("Virhe kyydin poistossa:", deleteError);
+      return NextResponse.json({ error: "Kyydin poistaminen epäonnistui" }, { status: 500 });
+    }
 
     return NextResponse.json({ success: true });
   } catch (err) {

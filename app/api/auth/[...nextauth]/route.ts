@@ -1,7 +1,9 @@
 import NextAuth from "next-auth/next";
 import CredentialsProvider from "next-auth/providers/credentials";
+import GoogleProvider from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 import { createClient } from "@supabase/supabase-js";
+import { v4 as uuidv4 } from "uuid";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -48,6 +50,10 @@ const handler = NextAuth({
         }
       },
     }),
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    }),
   ],
 
   session: {
@@ -55,6 +61,37 @@ const handler = NextAuth({
   },
 
   callbacks: {
+    async signIn({ user, account }) {
+      if (account?.provider === "google") {
+        try {
+          // Check if user exists
+          const { data: existingUser } = await supabase
+            .from("User")
+            .select("*")
+            .eq("email", user.email!)
+            .single();
+
+          if (!existingUser) {
+            // Create new user from Google
+            const { error } = await supabase
+              .from("User")
+              .insert([{
+                id: uuidv4(),
+                name: user.name || "",
+                email: user.email!,
+                passwordHash: "", // Google users don't have password hash
+              }]);
+
+            if (error) throw error;
+          }
+        } catch (err) {
+          console.error("Google sign-in error:", err);
+          return false;
+        }
+      }
+      return true;
+    },
+
     async jwt({ token, user }) {
       if (user) {
         (token as any).id = (user as any).id;

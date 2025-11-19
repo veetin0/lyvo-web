@@ -9,6 +9,7 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
+import GoogleMapRide from "@/components/GoogleMapRide";
 
 const cities = [
   "Helsinki", "Espoo", "Vantaa", "Tampere", "Turku", "Oulu", "Jyväskylä", "Kuopio", "Lahti", "Pori",
@@ -69,6 +70,13 @@ export default function NewRide() {
   const [duration, setDuration] = useState<string>("");
   const [progress, setProgress] = useState<number>(0);
   const [showNotification, setShowNotification] = useState(false);
+  const [notificationMessage, setNotificationMessage] = useState<string>("");
+  const [notificationType, setNotificationType] = useState<"success" | "error">("success");
+
+  const handleRouteSelected = (routeInfo: { distance: string; duration: string; polyline: string }) => {
+    setDistance(routeInfo.distance);
+    setDuration(routeInfo.duration);
+  };
 
   const [showDiscount, setShowDiscount] = useState(false);
   const [discountPrice, setDiscountPrice] = useState("");
@@ -120,14 +128,20 @@ export default function NewRide() {
       price_eur: ride.price,
     });
     if (!isLoggedIn || !session?.user) {
-      alert("Kirjaudu ensin sisään lisätäksesi kyydin!");
+      setNotificationType("error");
+      setNotificationMessage("Kirjaudu ensin sisään lisätäksesi kyydin!");
+      setShowNotification(true);
+      setTimeout(() => setShowNotification(false), 3000);
       return;
     }
 
     const fromCountry = cityCountries[ride.from];
     const toCountry = cityCountries[ride.to];
     if (fromCountry && toCountry && fromCountry !== toCountry) {
-      alert("Lähtö- ja kohdekaupungin on oltava samasta maasta.");
+      setNotificationType("error");
+      setNotificationMessage("Lähtö- ja kohdekaupungin on oltava samasta maasta.");
+      setShowNotification(true);
+      setTimeout(() => setShowNotification(false), 3000);
       return;
     }
 
@@ -147,10 +161,18 @@ export default function NewRide() {
 
     if (error) {
       console.error("Virhe tallennuksessa:", error.message || error);
-      alert(`Virhe tallennuksessa: ${error.message || JSON.stringify(error)}`);
+      setNotificationType("error");
+      setNotificationMessage(`Virhe tallennuksessa: ${error.message || JSON.stringify(error)}`);
+      setShowNotification(true);
+      setTimeout(() => setShowNotification(false), 3000);
     } else {
-      alert("Kyyti lisätty onnistuneesti!");
-      router.push("/rides");
+      setNotificationType("success");
+      setNotificationMessage("Kyyti lisätty onnistuneesti!");
+      setShowNotification(true);
+      setTimeout(() => {
+        setShowNotification(false);
+        router.push("/rides");
+      }, 1500);
     }
   };
 
@@ -310,6 +332,17 @@ export default function NewRide() {
           </div>
         </motion.div>
 
+        {/* Google Maps Component */}
+        {ride.from && ride.to && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.1 }}
+          >
+            <GoogleMapRide onRouteSelected={handleRouteSelected} />
+          </motion.div>
+        )}
+
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -358,20 +391,6 @@ export default function NewRide() {
         {distance && duration && (
           <div className="mt-4 text-shade-600 text-sm">
             Matka: <span className="font-semibold">{distance}</span> &nbsp; | &nbsp; Kesto: <span className="font-semibold">{duration}</span>
-          </div>
-        )}
-        {/* Simuloitu karttanäkymä */}
-        {ride.from && ride.to && (
-          <div className="mt-4 relative bg-gradient-to-br from-shade-50 to-white border border-shade-200 rounded-xl p-4 shadow-inner">
-            <h3 className="text-shade-700 font-semibold mb-2 text-sm">Reittikartta (simuloitu)</h3>
-            <div className="relative h-48 bg-white rounded-lg border border-shade-100 overflow-hidden">
-              <div className="absolute top-1/2 left-6 w-[calc(100%-3rem)] h-1 bg-shade-300 rounded-full" />
-              <div className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 bg-shade-500 rounded-full shadow" />
-              <div className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 bg-shade-600 rounded-full shadow" />
-              <div className="absolute top-[55%] left-[20%] w-5 h-3 bg-shade-400 rounded-full animate-bounce shadow" />
-              <p className="absolute top-[65%] left-4 text-xs text-shade-600">{ride.from}</p>
-              <p className="absolute top-[65%] right-4 text-xs text-shade-600">{ride.to}</p>
-            </div>
           </div>
         )}
 
@@ -673,6 +692,27 @@ export default function NewRide() {
         </motion.button>
       </form>
         </>
+      )}
+      {showNotification && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 20 }}
+          className="fixed bottom-4 right-4 bg-white border-2 rounded-xl shadow-lg p-4 z-50 max-w-sm"
+          style={{
+            borderColor: notificationType === "success" ? "#16a34a" : "#dc2626",
+            backgroundColor: notificationType === "success" ? "#f0fdf4" : "#fef2f2",
+          }}
+        >
+          <p
+            className="font-medium text-sm"
+            style={{
+              color: notificationType === "success" ? "#16a34a" : "#dc2626",
+            }}
+          >
+            {notificationMessage}
+          </p>
+        </motion.div>
       )}
     </motion.main>
   );

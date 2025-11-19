@@ -1,22 +1,47 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
 import { getToken } from "next-auth/jwt";
-
-const prisma = new PrismaClient();
+import { createClient } from "@supabase/supabase-js";
 
 // 📌 GET – Hae kirjautuneen käyttäjän varaukset
 export async function GET(req: Request): Promise<NextResponse> {
   try {
-  const token = await getToken({ req: req as any });
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    const token = await getToken({ req: req as any });
+    console.log("Token from request:", token);
+    
     if (!token?.email) {
+      console.error("No email in token");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const bookings = await prisma.booking.findMany({
-      where: { user: { email: token.email as string } },
-      include: { ride: true },
-    });
+    
+    const { data: bookings, error } = await supabase
+      .from("bookings")
+      .select(`
+        id,
+        created_at,
+        ride_id,
+        ride:ride_id (
+          id,
+          from_city,
+          to_city,
+          departure,
+          price_eur,
+          driver_name
+        )
+      `)
+      .eq("user_email", token.email);
 
-    return NextResponse.json(bookings);
+    if (error) {
+      console.error("Supabase error:", error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    console.log("Bookings found for", token.email, ":", bookings);
+    return NextResponse.json(bookings || []);
   } catch (error) {
     console.error("Error fetching bookings:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -26,7 +51,12 @@ export async function GET(req: Request): Promise<NextResponse> {
 // 📌 POST – Tee varaus
 export async function POST(req: Request): Promise<NextResponse> {
   try {
-  const token = await getToken({ req: req as any });
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+
+    const token = await getToken({ req: req as any });
     if (!token?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -36,42 +66,69 @@ export async function POST(req: Request): Promise<NextResponse> {
       return NextResponse.json({ error: "Missing rideId" }, { status: 400 });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: token.email as string },
-    });
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
+    console.log("Creating booking for user:", token.email, "ride:", rideId);
 
-    // Estä oman kyydin varaaminen
-    const ride = await prisma.ride.findUnique({ where: { id: rideId } });
-    if (!ride) {
+    // Check if ride exists
+    const { data: ride, error: rideError } = await supabase
+      .from("rides")
+      .select("id, owner, seats")
+      .eq("id", rideId)
+      .single();
+
+    console.log("Ride query result:", { ride, rideError });
+
+    if (rideError || !ride) {
+      console.error("Ride not found or error:", rideError);
       return NextResponse.json({ error: "Ride not found" }, { status: 404 });
     }
-    if (ride.driverId === user.id) {
+
+    // We don't need to check if user exists since we have valid JWT token
+    // The user email is already verified by NextAuth
+    const userEmail = token.email;
+    const userId = token.id;
+    console.log("User email from token:", userEmail, "User ID:", userId);
+
+    if (ride.owner === userId) {
       return NextResponse.json(
         { error: "Et voi varata omaa kyytiäsi" },
         { status: 400 }
       );
     }
 
-    // Tarkista ettei varaus ole jo olemassa
-    const existing = await prisma.booking.findFirst({
-      where: { userId: user.id, rideId },
-    });
+    // Check if booking already exists
+    const { data: existing } = await supabase
+      .from("bookings")
+      .select("id")
+      .eq("user_email", token.email)
+      .eq("ride_id", rideId)
+      .single();
+
     if (existing) {
       return NextResponse.json({ error: "Already booked" }, { status: 400 });
     }
 
-    const booking = await prisma.booking.create({
-      data: { userId: user.id, rideId },
-    });
+    // Create booking
+    const { data: booking, error: bookingError } = await supabase
+      .from("bookings")
+      .insert({ user_email: token.email, ride_id: rideId })
+      .select();
 
-    // Vähennä kyydin vapaita paikkoja
-    await prisma.ride.update({
-      where: { id: rideId },
-      data: { seats: { decrement: 1 } },
-    });
+    if (bookingError) {
+      console.error("Booking error details:", bookingError);
+      return NextResponse.json({ error: bookingError.message }, { status: 500 });
+    }
+
+    console.log("Booking created:", booking);
+
+    // Decrement seats
+    const { error: updateError } = await supabase
+      .from("rides")
+      .update({ seats: ride.seats - 1 })
+      .eq("id", rideId);
+
+    if (updateError) {
+      console.error("Error updating seats:", updateError);
+    }
 
     return NextResponse.json({ success: true, booking });
   } catch (error) {

@@ -44,6 +44,7 @@ export default function EtsiKyyti() {
   const [loading, setLoading] = useState(true);
   const [surpriseRide, setSurpriseRide] = useState<Ride | null>(null);
   const [bookedRides, setBookedRides] = useState<Record<string, boolean>>({});
+  const [userRideIds, setUserRideIds] = useState<Set<string>>(new Set());
   const router = useRouter();
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
@@ -76,9 +77,36 @@ export default function EtsiKyyti() {
           },
           options: r.options || [],
           seats: r.seats ?? null,
+          owner: r.owner,
         }));
 
         setRides(formatted);
+
+        // Fetch user's own rides and booked rides
+        if (session?.user) {
+          try {
+            const userId = (session.user as any).id;
+            const userOwnRides = formatted.filter((ride: any) => ride.owner === userId);
+            const userRideIdSet = new Set(userOwnRides.map((r: any) => r.id));
+            setUserRideIds(userRideIdSet);
+
+            // Fetch user's booked rides
+            const response = await fetch("/api/bookings");
+            if (response.ok) {
+              const bookings = await response.json();
+              const bookedRideIds: Record<string, boolean> = {};
+              bookings.forEach((booking: any) => {
+                const rideId = booking.ride?.id || booking.ride_id;
+                if (rideId) {
+                  bookedRideIds[rideId] = true;
+                }
+              });
+              setBookedRides(bookedRideIds);
+            }
+          } catch (err) {
+            console.error("Error fetching user rides and bookings:", err);
+          }
+        }
       } catch (error) {
         console.error("Virhe haettaessa kyytejä Supabasesta:", error);
       } finally {
@@ -86,7 +114,7 @@ export default function EtsiKyyti() {
       }
     };
     fetchRides();
-  }, []);
+  }, [session]);
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -342,7 +370,7 @@ export default function EtsiKyyti() {
                     >
                       Kyyti täynnä
                     </button>
-                  ) : ride.driver?.name === (session?.user as any)?.name ? (
+                  ) : userRideIds.has(ride.id) ? (
                     <button
                       disabled
                       className="mt-4 w-full px-4 py-2 rounded-xl font-semibold bg-gray-100 text-gray-600 border border-gray-300 cursor-default"

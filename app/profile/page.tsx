@@ -32,6 +32,8 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [rideToDelete, setRideToDelete] = useState<string | null>(null);
   const [bookings, setBookings] = useState<any[]>([]);
+  const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
+  const [notificationType, setNotificationType] = useState<"success" | "error">("success");
 
   // Hae käyttäjän tiedot ja kyydit Supabasen kautta
   useEffect(() => {
@@ -118,44 +120,20 @@ export default function ProfilePage() {
         setTimeout(() => corsWarning.remove(), 5000);
       }
 
-      let bookingRes;
-
-      if (userId && userId.match(/^[0-9a-fA-F-]{36}$/)) {
-        bookingRes = await supabase
-          .from("bookings")
-          .select(`
-            id,
-            ride:ride_id (
-              id,
-              from_city,
-              to_city,
-              departure,
-              price_eur,
-              driver_name
-            )
-          `)
-          .eq("user_id", userId);
-      } else {
-        bookingRes = await supabase
-          .from("bookings")
-          .select(`
-            id,
-            ride:ride_id (
-              id,
-              from_city,
-              to_city,
-              departure,
-              price_eur,
-              driver_name
-            )
-          `)
-          .eq("user_email", (session?.user as any)?.email ?? "");
-      }
-
-      if (bookingRes.error) {
-        console.error("Virhe haettaessa varauksia:", bookingRes.error.message);
-      } else if (bookingRes.data) {
-        setBookings(bookingRes.data);
+      try {
+        const response = await fetch("/api/bookings");
+        if (response.ok) {
+          const bookingsData: any[] = await response.json();
+          console.log("Bookings fetched from API:", bookingsData);
+          setBookings(bookingsData);
+        } else {
+          const status = response.status;
+          console.error("Error fetching bookings: HTTP", status);
+          setBookings([]);
+        }
+      } catch (error: unknown) {
+        console.error("Error fetching bookings:", error);
+        setBookings([]);
       }
 
       setLoading(false);
@@ -167,15 +145,26 @@ export default function ProfilePage() {
   const handleDeleteRide = async () => {
     if (!rideToDelete) return;
     try {
-      const res = await supabase.from("rides").delete().eq("id", rideToDelete);
-      if (res.error) {
-        alert("Virhe poistettaessa kyytiä.");
-      } else {
+      const response = await fetch(`/api/rides?id=${rideToDelete}`, {
+        method: "DELETE",
+      });
+      
+      if (response.ok) {
         setRides((prev) => prev.filter((r) => r.id !== rideToDelete));
-        alert("Kyyti poistettu onnistuneesti!");
+        setNotificationType("success");
+        setNotificationMessage("Kyyti poistettu onnistuneesti!");
+        setTimeout(() => setNotificationMessage(null), 3000);
+      } else {
+        const error = await response.json();
+        setNotificationType("error");
+        setNotificationMessage(error.error || "Virhe poistettaessa kyytiä.");
+        setTimeout(() => setNotificationMessage(null), 3000);
       }
     } catch (err) {
       console.error("Virhe:", err);
+      setNotificationType("error");
+      setNotificationMessage("Virhe poistettaessa kyytiä.");
+      setTimeout(() => setNotificationMessage(null), 3000);
     } finally {
       setRideToDelete(null);
     }
@@ -298,6 +287,27 @@ export default function ProfilePage() {
             </div>
           </div>
         </div>
+      )}
+      {notificationMessage && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 20 }}
+          className="fixed bottom-4 right-4 bg-white border-2 rounded-xl shadow-lg p-4 z-50 max-w-sm"
+          style={{
+            borderColor: notificationType === "success" ? "#16a34a" : "#dc2626",
+            backgroundColor: notificationType === "success" ? "#f0fdf4" : "#fef2f2",
+          }}
+        >
+          <p
+            className="font-medium text-sm"
+            style={{
+              color: notificationType === "success" ? "#16a34a" : "#dc2626",
+            }}
+          >
+            {notificationMessage}
+          </p>
+        </motion.div>
       )}
     </motion.main>
   );

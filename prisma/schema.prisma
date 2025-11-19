@@ -14,6 +14,7 @@ model User {
   passwordHash String
   createdAt    DateTime @default(now())
   rides        Ride[]   @relation("UserRides")
+  bookings     Booking[]
 }
 
 model Ride {
@@ -30,4 +31,17 @@ model Ride {
   driverId  String
   createdAt DateTime @default(now())
   driver    User     @relation("UserRides", fields: [driverId], references: [id])
+  bookings  Booking[]
 }
+
+model Booking {
+  id        String   @id @default(cuid())
+  userId    String
+  rideId    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+  ride      Ride     @relation(fields: [rideId], references: [id])
+
+  @@unique([userId, rideId])
+}
+
