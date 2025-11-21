@@ -94,11 +94,17 @@ export default function GoogleMapRide({ onRouteSelected }: GoogleMapRideProps) {
   const [directions, setDirections] = useState(null);
   const [loading, setLoading] = useState(false);
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
+  const [showNotification, setShowNotification] = useState(false);
+  const [notificationMessage, setNotificationMessage] = useState<string>("");
+  const [notificationType, setNotificationType] = useState<"success" | "error">("success");
   const mapRef = useRef(null);
 
   const handleFindRoute = async () => {
     if (!from || !to) {
-      alert("Täytä lähtö- ja päätepaikka");
+      setNotificationType("error");
+      setNotificationMessage("Täytä lähtö- ja päätepaikka");
+      setShowNotification(true);
+      setTimeout(() => setShowNotification(false), 3000);
       return;
     }
 
@@ -116,7 +122,10 @@ export default function GoogleMapRide({ onRouteSelected }: GoogleMapRideProps) {
       console.log("Route response:", data);
 
       if (!response.ok || data.error) {
-        alert("Reitin haku epäonnistui: " + (data.error || "Tuntematon virhe"));
+        setNotificationType("error");
+        setNotificationMessage(`Reitin haku epäonnistui: ${data.error || "Tuntematon virhe"}`);
+        setShowNotification(true);
+        setTimeout(() => setShowNotification(false), 3000);
         console.error("Error details:", data);
         return;
       }
@@ -137,7 +146,10 @@ export default function GoogleMapRide({ onRouteSelected }: GoogleMapRideProps) {
       }
     } catch (error) {
       console.error("Error finding route:", error);
-      alert("Virhe reitin haussa: " + (error instanceof Error ? error.message : "Tuntematon virhe"));
+      setNotificationType("error");
+      setNotificationMessage(`Virhe reitin haussa: ${error instanceof Error ? error.message : "Tuntematon virhe"}`);
+      setShowNotification(true);
+      setTimeout(() => setShowNotification(false), 3000);
     } finally {
       setLoading(false);
     }
@@ -157,6 +169,13 @@ export default function GoogleMapRide({ onRouteSelected }: GoogleMapRideProps) {
 
   return (
     <div className="space-y-4">
+      {/* Notification Modal */}
+      {showNotification && (
+        <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 text-white px-6 py-3 rounded-xl shadow-lg transition-opacity z-50 flex flex-col items-center space-y-3 ${notificationType === "error" ? "bg-red-500" : "bg-shade-500"}`}>
+          <p>{notificationMessage}</p>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Lähtöpaikka</label>

@@ -3,11 +3,113 @@
 import { useState, useMemo, useEffect, ChangeEvent } from "react";
 import AlertBox from "@/components/AlertBox";
 import { motion } from "framer-motion";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { AnimatePresence } from "framer-motion";
 import { CheckCircle2 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 import { useSession } from "next-auth/react";
+
+const translations = {
+  fi: {
+    title: "Etsi kyyti",
+    sort: "Järjestä",
+    filters: "Lisäsuodattimet",
+    from: "Lähtöpaikka",
+    to: "Kohdepaikka",
+    date: "Päivämäärä",
+    time: "Aika",
+    noSort: "Ei järjestystä",
+    sortByPrice: "Hinnan mukaan",
+    sortByTime: "Lähtöajan mukaan",
+    sortByRating: "Arvion mukaan",
+    showing: "Näytetään",
+    rides: "kyytiä",
+    noResults: "Ei tuloksia valituilla hakuehdoilla",
+    bookRide: "Varaa paikka",
+    booked: "Paikka varattu",
+    fullRide: "Kyyti täynnä",
+    ownRide: "Oma kyyti",
+    seats: "Vapaita paikkoja",
+    reservedSeats: "Vapaat paikat",
+    notReserved: "Ei varauksia",
+    showingCount: (count: number) => `Näytetään ${count} kyytiä`,
+    noRidesFound: "Ei kyytejä löytynyt",
+    price: "Hinta",
+    minimumSeats: "Vähintään istumapaikat",
+    seatsLabel: "Paikat",
+    clearFilters: "Poista suodattimet",
+    allSeats: "Kaikki paikat",
+    bookedLabel: "Varattu",
+    signInToBook: "Kirjaudu sisään varataksesi kyytejä",
+    carNotSpecified: "Autoa ei ilmoitettu",
+  },
+  en: {
+    title: "Find a Ride",
+    sort: "Sort",
+    filters: "Filters",
+    from: "From",
+    to: "To",
+    date: "Date",
+    time: "Time",
+    noSort: "No sort",
+    sortByPrice: "By price",
+    sortByTime: "By time",
+    sortByRating: "By rating",
+    showing: "Showing",
+    rides: "rides",
+    noResults: "No results found",
+    bookRide: "Book Ride",
+    booked: "Booked",
+    fullRide: "Ride full",
+    ownRide: "Your ride",
+    seats: "Available seats",
+    reservedSeats: "Reserved seats",
+    notReserved: "Not reserved",
+    showingCount: (count: number) => `Showing ${count} rides`,
+    noRidesFound: "No rides found",
+    price: "Price",
+    minimumSeats: "Minimum seats",
+    seatsLabel: "Seats",
+    clearFilters: "Clear Filters",
+    allSeats: "All seats",
+    bookedLabel: "Booked",
+    signInToBook: "Please sign in to book rides",
+    carNotSpecified: "No car specified",
+  },
+  sv: {
+    title: "Hitta skjuts",
+    sort: "Sortera",
+    filters: "Filter",
+    from: "Från",
+    to: "Till",
+    date: "Datum",
+    time: "Tid",
+    noSort: "Ingen sortering",
+    sortByPrice: "Efter pris",
+    sortByTime: "Efter tid",
+    sortByRating: "Efter betyg",
+    showing: "Visar",
+    rides: "skjutsar",
+    noResults: "Inga resultat hittades",
+    bookRide: "Boka skjuts",
+    booked: "Bokad",
+    fullRide: "Skjutsen är full",
+    ownRide: "Din skjuts",
+    seats: "Lediga platser",
+    reservedSeats: "Bokade platser",
+    notReserved: "Inte reserverad",
+    showingCount: (count: number) => `Visar ${count} skjutsar`,
+    noRidesFound: "Inga skjutsar hittades",
+    price: "Pris",
+    minimumSeats: "Minsta platser",
+    seatsLabel: "Platser",
+    clearFilters: "Rensa filter",
+    allSeats: "Alla platser",
+    bookedLabel: "Bokad",
+    signInToBook: "Logga in för att boka skjutsar",
+    carNotSpecified: "Ingen bil angiven",
+  },
+};
 
 interface Ride {
   id: string;
@@ -33,6 +135,10 @@ const supabase = createClient(
 );
 
 export default function EtsiKyyti() {
+  const pathname = usePathname();
+  const locale = (pathname.split('/')[1] || 'fi') as keyof typeof translations;
+  const t = translations[locale] || translations.en;
+
   const [rides, setRides] = useState<Ride[]>([]);
   const { data: session } = useSession();
   const [filters, setFilters] = useState<Record<string, any>>({
@@ -67,10 +173,10 @@ export default function EtsiKyyti() {
           id: r.id,
           from: r.from_city,
           to: r.to_city,
-          date: new Date(r.departure).toLocaleDateString("en-GB"),
-          time: new Date(r.departure).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }),
+          date: new Date(r.departure).toLocaleDateString("fi-FI"),
+          time: new Date(r.departure).toLocaleTimeString("fi-FI", { hour: "2-digit", minute: "2-digit" }),
           price: r.price_eur,
-          car: r.car || "No car specified",
+          car: r.car || t.carNotSpecified,
           driver: {
             name: r.driver_name
               ? (() => {
@@ -146,24 +252,25 @@ export default function EtsiKyyti() {
         (filters.minSeats === 0 || (ride.seats && ride.seats >= filters.minSeats))
     );
 
-    // Mapping between English filter labels and database values
-    const filterMapping: Record<string, string> = {
-      "Electric car": "Sähköauto",
-      "Quiet ride": "Hiljainen kyyti",
-      "Pets allowed": "Lemmikit sallittu",
-      "Van": "Tila-auto",
-      "Female driver": "Naiskuljettaja",
-      "Popular ride": "Suosittu kyyti",
+    // Database option values are always in Finnish
+    const dbOptions = {
+      electric: "Sähköauto",
+      quiet: "Hiljainen kyyti",
+      pets: "Lemmikit sallittu",
+      van: "Tila-auto",
+      femaleDriver: "Naiskuljettaja",
+      popular: "Suosittu kyyti",
     };
 
-    // Apply option filters
-    Object.entries(filterMapping).forEach(([englishLabel, dbValue]) => {
-      if (filters[englishLabel]) {
-        results = results.filter((r) => r.options.includes(dbValue));
-      }
-    });
-
-    if (filters["Popular ride"]) results = results.filter((r) => r.driver.rating > 4.5);
+    // Check filters by database option key (locale doesn't affect what's stored in DB)
+    if (filters["electric"]) results = results.filter((r) => r.options.includes(dbOptions.electric));
+    if (filters["quiet"]) results = results.filter((r) => r.options.includes(dbOptions.quiet));
+    if (filters["pets"]) results = results.filter((r) => r.options.includes(dbOptions.pets));
+    if (filters["van"]) results = results.filter((r) => r.options.includes(dbOptions.van));
+    if (filters["femaleDriver"]) results = results.filter((r) =>
+      ["Sara", "Anna", "Laura"].some((n) => r.driver.name.includes(n))
+    );
+    if (filters["popular"]) results = results.filter((r) => r.driver.rating > 4.5);
 
     if (filters.sort === "price") results.sort((a, b) => a.price - b.price);
     if (filters.sort === "time") results.sort((a, b) => a.time.localeCompare(b.time));
@@ -181,13 +288,13 @@ export default function EtsiKyyti() {
     >
       <div className="max-w-3xl mx-auto">
         <h1 className="text-4xl font-extrabold bg-gradient-to-r from-emerald-500 to-emerald-700 bg-clip-text text-transparent mb-10">
-          Etsi kyyti
+          {t.title}
         </h1>
 
         <div className="flex flex-col md:flex-row items-center justify-between mb-6 gap-4 bg-white border border-emerald-100 rounded-xl p-4 shadow-sm">
           <div className="flex items-center gap-3">
             <label htmlFor="sort" className="text-emerald-700 font-semibold text-sm">
-              Järjestä:
+              {t.sort}:
             </label>
             <select
               id="sort"
@@ -196,10 +303,10 @@ export default function EtsiKyyti() {
               onChange={handleInputChange}
               className="bg-white border border-emerald-300 text-emerald-700 font-medium rounded-lg px-3 py-2 shadow-sm hover:bg-emerald-50 focus:ring-2 focus:ring-emerald-400 focus:outline-none transition"
             >
-              <option value="">Ei järjestystä</option>
-              <option value="price">Hinnan mukaan</option>
-              <option value="time">Lähtöajan mukaan</option>
-              <option value="rating">Arvion mukaan</option>
+              <option value="">{t.noSort}</option>
+              <option value="price">{t.sortByPrice}</option>
+              <option value="time">{t.sortByTime}</option>
+              <option value="rating">{t.sortByRating}</option>
             </select>
           </div>
 
@@ -212,13 +319,13 @@ export default function EtsiKyyti() {
                 : "bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50"
             }`}
           >
-            Lisäsuodattimet
+            {t.filters}
           </button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-          <input type="text" name="from" value={filters.from} onChange={handleInputChange} placeholder="Lähtöpaikka" className="input rounded-xl shadow-inner focus:ring-emerald-300 focus:outline-none transition" />
-          <input type="text" name="to" value={filters.to} onChange={handleInputChange} placeholder="Kohdepaikka" className="input rounded-xl shadow-inner focus:ring-emerald-300 focus:outline-none transition" />
+          <input type="text" name="from" value={filters.from} onChange={handleInputChange} placeholder={t.from} className="input rounded-xl shadow-inner focus:ring-emerald-300 focus:outline-none transition" />
+          <input type="text" name="to" value={filters.to} onChange={handleInputChange} placeholder={t.to} className="input rounded-xl shadow-inner focus:ring-emerald-300 focus:outline-none transition" />
           <input type="date" name="date" value={filters.date} onChange={handleInputChange} className="input rounded-xl shadow-inner focus:ring-emerald-300 focus:outline-none transition" />
           <input type="time" name="time" value={filters.time} onChange={handleInputChange} className="input rounded-xl shadow-inner focus:ring-emerald-300 focus:outline-none transition" />
         </div>
@@ -234,7 +341,7 @@ export default function EtsiKyyti() {
           >
             {/* Price Range Section */}
             <div className="mb-6 pb-6 border-b border-emerald-100">
-              <label className="block text-sm font-semibold text-emerald-700 mb-3">Hinta: {filters.minPrice}€ - {filters.maxPrice}€</label>
+              <label className="block text-sm font-semibold text-emerald-700 mb-3">{t.price}: {filters.minPrice}€ - {filters.maxPrice}€</label>
               <div className="flex items-center gap-4">
                 <input
                   type="range"
@@ -257,7 +364,7 @@ export default function EtsiKyyti() {
 
             {/* Minimum Seats Section */}
             <div className="mb-6 pb-6 border-b border-emerald-100">
-              <label htmlFor="minSeats" className="block text-sm font-semibold text-emerald-700 mb-2">Minimum available seats:</label>
+              <label htmlFor="minSeats" className="block text-sm font-semibold text-emerald-700 mb-2">{t.seatsLabel}:</label>
               <select
                 id="minSeats"
                 name="minSeats"
@@ -265,27 +372,34 @@ export default function EtsiKyyti() {
                 onChange={(e) => setFilters((prev) => ({ ...prev, minSeats: Number(e.target.value) }))}
                 className="w-full bg-white border border-emerald-300 text-emerald-700 font-medium rounded-lg px-3 py-2 shadow-sm hover:bg-emerald-50 focus:ring-2 focus:ring-emerald-400 focus:outline-none transition"
               >
-                <option value="0">All</option>
-                <option value="1">At least 1</option>
-                <option value="2">At least 2</option>
-                <option value="3">At least 3</option>
-                <option value="4">At least 4</option>
-                <option value="5">At least 5</option>
+                <option value="0">{t.allSeats}</option>
+                <option value="1">Vähintään 1</option>
+                <option value="2">Vähintään 2</option>
+                <option value="3">Vähintään 3</option>
+                <option value="4">Vähintään 4</option>
+                <option value="5">Vähintään 5</option>
               </select>
             </div>
 
             {/* Existing Checkboxes */}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {["Electric car", "Quiet ride", "Pets allowed", "Van", "Female driver", "Popular ride"].map(
+              {[
+                { key: "electric", label: locale === "fi" ? "Sähköauto" : locale === "sv" ? "Elbilar" : "Electric car" },
+                { key: "quiet", label: locale === "fi" ? "Hiljainen kyyti" : locale === "sv" ? "Tyst skjuts" : "Quiet ride" },
+                { key: "pets", label: locale === "fi" ? "Lemmikit sallittu" : locale === "sv" ? "Husdjur tillåtna" : "Pets allowed" },
+                { key: "van", label: locale === "fi" ? "Tila-auto" : locale === "sv" ? "Skåpbil" : "Van" },
+                { key: "femaleDriver", label: locale === "fi" ? "Naiskuljettaja" : locale === "sv" ? "Kvinnlig förare" : "Female driver" },
+                { key: "popular", label: locale === "fi" ? "Suosittu kyyti" : locale === "sv" ? "Populär skjuts" : "Popular ride" },
+              ].map(
                 (opt) => (
-                  <label key={opt} className="flex items-center gap-2 text-sm text-emerald-700 font-medium hover:text-emerald-600 transition">
+                  <label key={opt.key} className="flex items-center gap-2 text-sm text-emerald-700 font-medium hover:text-emerald-600 transition">
                     <input
                       type="checkbox"
-                      checked={!!filters[opt]}
-                      onChange={(e) => setFilters((prev) => ({ ...prev, [opt]: e.target.checked }))}
+                      checked={!!filters[opt.key]}
+                      onChange={(e) => setFilters((prev) => ({ ...prev, [opt.key]: e.target.checked }))}
                       className="accent-emerald-500 w-4 h-4"
                     />
-                    {opt}
+                    {opt.label}
                   </label>
                 )
               )}
@@ -312,46 +426,46 @@ export default function EtsiKyyti() {
                 minPrice: 0,
                 maxPrice: 100,
                 minSeats: 0,
-                "Electric car": false,
-                "Quiet ride": false,
-                "Pets allowed": false,
-                "Van": false,
-                "Female driver": false,
-                "Popular ride": false,
+                electric: false,
+                quiet: false,
+                pets: false,
+                van: false,
+                femaleDriver: false,
+                popular: false,
               })}
               className="px-6 py-2 bg-white text-emerald-600 border border-emerald-300 rounded-lg font-medium shadow-sm hover:bg-emerald-50 transition"
             >
-              Clear all filters
+              {t.clearFilters}
             </button>
           </motion.div>
         )}
 
         <div className="mb-6 text-sm text-emerald-700 font-medium">
-          {filteredRides.length > 0 ? `Showing ${filteredRides.length} rides` : "No results found for your search"}
+          {filteredRides.length > 0 ? t.showingCount(filteredRides.length) : t.noRidesFound}
         </div>
 
         <div className="grid gap-6">
           {filteredRides.length > 0 ? (
             filteredRides.map((ride) => {
               const optionLabels: Record<string, string> = {
-                electric: "Electric car",
-                van: "Van",
-                pets: "Pets allowed",
-                quiet: "Quiet ride",
-                music: "Music during ride",
-                ac: "Air conditioning",
-                talkative: "Chatty driver",
-                smokeFree: "Smoke-free",
-                wifi: "WiFi available",
-                charging: "Phone charging",
-                bikeSpot: "Bike transportation",
-                pickUp: "Pickup available",
-                restStop: "Rest stops on route",
-                startTime: "Flexible departure",
-                bag: "Large luggage space",
-                rentCar: "Rental car",
-                femaleDriver: "Female driver",
-                popular: "Popular ride",
+                electric: "Sähköauto",
+                van: "Tila-auto",
+                pets: "Lemmikit sallittu",
+                quiet: "Hiljainen kyyti",
+                music: "Musiikkia kyydissä",
+                ac: "Ilmastointi",
+                talkative: "Puhelias kuski",
+                smokeFree: "Savuton kyyti",
+                wifi: "WiFi käytössä",
+                charging: "Latausmahdollisuus",
+                bikeSpot: "Polkupyörän kuljetus mahdollista",
+                pickUp: "Nouto sovittavissa",
+                restStop: "Taukopysähdyksiä matkalla",
+                startTime: "Joustava lähtöaika",
+                bag: "Tilaa laukuille",
+                rentCar: "Vuokra- tai yhteisauto",
+                femaleDriver: "Naiskuljettaja",
+                popular: "Suosittu kyyti",
               };
               return (
                 <motion.div
@@ -370,7 +484,7 @@ export default function EtsiKyyti() {
                     <span className="text-emerald-600 font-semibold">{ride.price} €</span>
                   </div>
                   <p className="text-sm text-neutral-600">
-                    {ride.date} at {ride.time}
+                    {ride.date} klo {ride.time}
                   </p>
                   <p className="text-sm text-neutral-500">{ride.car || "No car specified"}</p>
                   <div className="flex items-center justify-between mt-3">
@@ -405,17 +519,17 @@ export default function EtsiKyyti() {
                           </span>
                         </>
                       ) : (
-                        <span className="text-neutral-500 text-xs italic">Ei vielä arvioita</span>
+                        <span className="text-neutral-500 text-xs italic">No ratings</span>
                       )}
                     </div>
                   </div>
                   {ride.seats !== undefined && ride.seats !== null ? (
                     <p className="text-sm text-neutral-600 mt-1">
-                      Available seats: {ride.seats}
+                      {t.reservedSeats}: {ride.seats}
                     </p>
                   ) : (
                     <p className="text-sm text-neutral-600 mt-1">
-                      Available seats: not specified
+                      {t.notReserved}
                     </p>
                   )}
                   <div className="flex flex-wrap gap-2 mt-2">
@@ -430,7 +544,7 @@ export default function EtsiKyyti() {
                       disabled
                       className="mt-4 w-full px-4 py-2 rounded-xl font-semibold bg-gray-100 text-gray-500 border border-gray-300 cursor-not-allowed"
                     >
-                      Ride full
+                      Full ride
                     </button>
                   ) : userRideIds.has(ride.id) ? (
                     <button
@@ -448,9 +562,9 @@ export default function EtsiKyyti() {
                           return;
                         }
 
-                        // If no seats available, prevent booking
+                        // Jos ei ole paikkoja jäljellä, estetään varaus
                         if (ride.seats !== null && ride.seats <= 0) {
-                          setAlertMessage("This ride is already full!");
+                          setAlertMessage("This ride is full");
                           setTimeout(() => setAlertMessage(null), 3000);
                           return;
                         }
@@ -477,7 +591,7 @@ export default function EtsiKyyti() {
                             .eq("id", ride.id);
                         }
 
-                        setAlertMessage(`Seat booked for ride ${ride.from} → ${ride.to}!`);
+                        setAlertMessage(`Booking confirmed: ${ride.from} → ${ride.to}!`);
                         setTimeout(() => setAlertMessage(null), 3000);
                       }}
                       disabled={bookedRides[ride.id]}
@@ -489,10 +603,10 @@ export default function EtsiKyyti() {
                     >
                       {bookedRides[ride.id] ? (
                         <span className="inline-flex items-center gap-1">
-                          <CheckCircle2 size={18} /> Seat booked
+                          <CheckCircle2 size={18} /> {t.bookedLabel}
                         </span>
                       ) : (
-                        "Book a seat"
+                        t.bookRide
                       )}
                     </button>
                   )}
@@ -500,7 +614,7 @@ export default function EtsiKyyti() {
               );
             })
           ) : (
-            <p className="text-neutral-500">No rides found matching your search criteria.</p>
+            <p className="text-neutral-500">No rides found</p>
           )}
         </div>
       </div>
@@ -527,10 +641,10 @@ export default function EtsiKyyti() {
               className="bg-white rounded-2xl shadow-xl border border-emerald-100 p-8 max-w-sm w-full text-center"
             >
               <h2 className="text-xl font-semibold text-emerald-700 mb-3">
-                Sign in
+                Sign in required
               </h2>
               <p className="text-sm text-neutral-600 mb-6">
-                You must be signed in to book a ride.
+                {t.signInToBook}
               </p>
               <div className="flex justify-center gap-3">
                 <button

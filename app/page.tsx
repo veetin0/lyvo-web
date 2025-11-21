@@ -25,36 +25,52 @@ export default function Home() {
   };
 
   return (
-    <motion.main
-      initial={{ opacity: 0, y: 10 }}
-      animate={mainControls}
-      transition={{ duration: 0.8, ease: "easeOut" }}
-      className="relative flex flex-col items-center justify-center min-h-screen overflow-hidden pt-32 bg-gradient-to-b from-[#eaf8ec]/30 via-white/20 to-white/40 text-center px-4"
-    >
-      {/* Taustallinen blur-hehku */}
-      <div className="absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute top-[-200px] left-1/2 -translate-x-1/2 w-[800px] h-[800px] bg-[#25b44a] opacity-40 blur-[120px] rounded-full"></div>
-        <div className="absolute bottom-[-300px] right-[-200px] w-[600px] h-[600px] bg-[#2dcf57] opacity-50 blur-[100px] rounded-full"></div>
+    <>
+      {/* Background gradient */}
+      <div className="fixed inset-0 -z-20 bg-gradient-to-b from-white via-[#f8fffa] to-white" />
+      
+      {/* Persistent background orbs */}
+      <div className="fixed inset-0 -z-10 pointer-events-none" style={{ overflow: 'hidden' }}>
+        {/* Orb 1 - Top Left */}
+        <div 
+          className="absolute w-[600px] h-[600px] rounded-full blur-3xl"
+          style={{
+            top: '-200px',
+            left: '-100px',
+            background: 'radial-gradient(circle at 30% 30%, rgba(33, 165, 63, 0.5) 0%, rgba(33, 165, 63, 0.15) 40%, transparent 70%)',
+            willChange: 'transform',
+          }}
+        />
+        
+        {/* Orb 2 - Top Right */}
+        <div 
+          className="absolute w-[700px] h-[700px] rounded-full blur-3xl"
+          style={{
+            top: '0px',
+            right: '-150px',
+            background: 'radial-gradient(circle at 40% 50%, rgba(45, 207, 87, 0.4) 0%, rgba(45, 207, 87, 0.1) 40%, transparent 70%)',
+            willChange: 'transform',
+          }}
+        />
+        
+        {/* Orb 3 - Bottom Left */}
+        <div 
+          className="absolute w-[800px] h-[800px] rounded-full blur-3xl"
+          style={{
+            bottom: '-300px',
+            left: '0px',
+            background: 'radial-gradient(circle at 50% 50%, rgba(37, 180, 74, 0.45) 0%, rgba(37, 180, 74, 0.1) 40%, transparent 70%)',
+            willChange: 'transform',
+          }}
+        />
       </div>
 
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute top-20 left-1/3 w-96 h-96 bg-[#25b44a]/20 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-0 right-1/4 w-80 h-80 bg-[#2dcf57]/20 rounded-full blur-3xl animate-ping"></div>
-      </div>
-
-      {/* Hitaasti liikkuvat taustaelementit */}
-      <div className="absolute inset-0 overflow-visible z-0 pointer-events-none">
-        <div className="absolute top-10 left-1/4 w-64 h-64 bg-[#25b44a]/20 rounded-full blur-3xl animate-[float_10s_ease-in-out_infinite]" />
-        <div className="absolute bottom-20 right-1/3 w-72 h-72 bg-[#2dcf57]/20 rounded-full blur-3xl animate-[float_12s_ease-in-out_infinite_reverse]" />
-        <div className="absolute top-1/2 left-10 w-40 h-40 bg-[#25b44a]/20 rounded-full blur-2xl animate-[float_14s_ease-in-out_infinite]" />
-      </div>
-
-      <style jsx global>{`
-        @keyframes float {
-          0%, 100% { transform: translateY(0px) translateX(0px); }
-          50% { transform: translateY(-20px) translateX(10px); }
-        }
-      `}</style>
+      <motion.main
+        initial={{ opacity: 0, y: 10 }}
+        animate={mainControls}
+        transition={{ duration: 0.8, ease: "easeOut" }}
+        className="relative flex flex-col items-center justify-center min-h-screen overflow-hidden pt-32 text-center px-4"
+      >
 
       {/* Hero-tekstit */}
       <motion.h1
@@ -141,6 +157,7 @@ export default function Home() {
         initial={{ opacity: 0, y: 20 }}
         whileInView={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8, delay: 0.2 }}
+        viewport={{ once: true, amount: 0.3 }}
         className="mt-32 container-max text-center"
       >
         <h2 className="text-3xl font-bold text-[#1e9239] mb-8">Näin Lyvo toimii</h2>
@@ -165,6 +182,7 @@ export default function Home() {
         initial={{ opacity: 0, y: 30 }}
         whileInView={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8 }}
+        viewport={{ once: true, amount: 0.3 }}
         className="mt-32 container-max text-center"
       >
         <h2 className="text-3xl font-bold text-[#1e9239] mb-8">Lyvo numeroina</h2>
@@ -193,6 +211,7 @@ export default function Home() {
         initial={{ opacity: 0, y: 30 }}
         whileInView={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8 }}
+        viewport={{ once: true, amount: 0.3 }}
         className="mt-32 container-max text-center"
       >
         <h2 className="text-3xl font-bold text-[#1e9239] mb-8">Käyttäjien kokemuksia</h2>
@@ -221,21 +240,71 @@ export default function Home() {
         initial={{ opacity: 0, y: 30 }}
         whileInView={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8 }}
-        className="mt-32 container-max text-center"
+        viewport={{ once: true, amount: 0.3 }}
+        className="mt-32 container-max text-center relative z-10"
       >
         <h2 className="text-3xl font-bold text-[#1e9239] mb-8">Matkusta ympäri Pohjoismaita</h2>
-        <div className="relative w-full h-96 bg-[#eaf8ec] rounded-2xl border border-[#c2edca] shadow-inner overflow-hidden">
-          <svg viewBox="0 0 800 400" className="absolute inset-0 w-full h-full">
-            {/* Reitit */}
-            <motion.path d="M100 300 Q400 150 700 200" stroke="#21a53f" strokeWidth="3" fill="none" opacity="0.6" />
-            <motion.path d="M150 250 Q400 80 650 180" stroke="#21a53f" strokeWidth="2" fill="none" opacity="0.5" />
-            <motion.path d="M120 320 Q420 200 720 240" stroke="#21a53f" strokeWidth="4" fill="none" opacity="0.4" />
+        <div className="relative w-full h-96 bg-gradient-to-br from-[#eaf8ec] to-[#f5fbf7] rounded-2xl border-2 border-[#c2edca] shadow-lg overflow-hidden flex items-center justify-center">
+          <svg viewBox="0 0 800 400" className="w-full h-full" preserveAspectRatio="xMidYMid slice" style={{ filter: 'drop-shadow(0 0 2px rgba(0,0,0,0.1))' }}>
+            <defs>
+              <linearGradient id="routeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#21a53f" stopOpacity="0.4" />
+                <stop offset="50%" stopColor="#25b44a" stopOpacity="0.9" />
+                <stop offset="100%" stopColor="#2dcf57" stopOpacity="0.4" />
+              </linearGradient>
+              <style>{`
+                @keyframes moveCar1 {
+                  0% { offset-distance: 0%; }
+                  100% { offset-distance: 100%; }
+                }
+                @keyframes moveCar2 {
+                  0% { offset-distance: 0%; }
+                  100% { offset-distance: 100%; }
+                }
+                @keyframes moveCar3 {
+                  0% { offset-distance: 0%; }
+                  100% { offset-distance: 100%; }
+                }
+              `}</style>
+            </defs>
 
-            {/* Liikkuvat pisteet (autot) */}
-            <motion.circle cx="100" cy="300" r="6" fill="#21a53f" animate={{ x: [0, 600, 0] }} transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }} />
-            <motion.circle cx="150" cy="250" r="5" fill="#21a53f" animate={{ x: [0, 500, 0] }} transition={{ duration: 14, repeat: Infinity, ease: "easeInOut" }} />
-            <motion.circle cx="120" cy="320" r="7" fill="#21a53f" animate={{ x: [0, 580, 0] }} transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }} />
+            {/* Reitit */}
+            <path d="M50 300 Q400 100 750 200" stroke="url(#routeGradient)" strokeWidth="4" fill="none" />
+            <path d="M100 250 Q400 50 700 180" stroke="url(#routeGradient)" strokeWidth="3" fill="none" />
+            <path d="M70 330 Q420 180 730 240" stroke="url(#routeGradient)" strokeWidth="4" fill="none" />
+
+            {/* Kaupunkipisteet */}
+            <circle cx="50" cy="300" r="6" fill="#1e9239" />
+            <circle cx="750" cy="200" r="6" fill="#1e9239" />
+            <circle cx="100" cy="250" r="6" fill="#1e9239" />
+            <circle cx="700" cy="180" r="6" fill="#1e9239" />
+            <circle cx="70" cy="330" r="6" fill="#1e9239" />
+            <circle cx="730" cy="240" r="6" fill="#1e9239" />
+
+            {/* Auto 1 */}
+            <g style={{ offsetPath: 'path("M50 300 Q400 100 750 200")', animation: 'moveCar1 12s infinite linear' }}>
+              <circle cx="0" cy="0" r="8" fill="#21a53f" />
+              <circle cx="0" cy="0" r="12" fill="none" stroke="#21a53f" strokeWidth="1" opacity="0.5" />
+            </g>
+
+            {/* Auto 2 */}
+            <g style={{ offsetPath: 'path("M100 250 Q400 50 700 180")', animation: 'moveCar2 14s infinite linear' }}>
+              <circle cx="0" cy="0" r="7" fill="#2dcf57" />
+              <circle cx="0" cy="0" r="11" fill="none" stroke="#2dcf57" strokeWidth="1" opacity="0.5" />
+            </g>
+
+            {/* Auto 3 */}
+            <g style={{ offsetPath: 'path("M70 330 Q420 180 730 240")', animation: 'moveCar3 10s infinite linear' }}>
+              <circle cx="0" cy="0" r="8" fill="#25b44a" />
+              <circle cx="0" cy="0" r="12" fill="none" stroke="#25b44a" strokeWidth="1" opacity="0.5" />
+            </g>
           </svg>
+
+          {/* Info-palkki */}
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-white via-white/90 to-transparent p-4 text-left z-20">
+            <p className="text-sm font-semibold text-[#1e9239]">Save nature and find your ride</p>
+            <p className="text-xs text-neutral-600 mt-1">Tens of thousands of rides daily</p>
+          </div>
         </div>
       </motion.section>
 
@@ -244,21 +313,23 @@ export default function Home() {
         initial={{ opacity: 0 }}
         whileInView={{ opacity: 1 }}
         transition={{ duration: 1 }}
+        viewport={{ once: true, amount: 0.3 }}
         className="mt-32 py-16 bg-gradient-to-r from-[#21a53f] to-[#2dcf57] text-white text-center rounded-2xl shadow-lg mx-4 md:mx-auto max-w-5xl"
       >
-        <h2 className="text-3xl font-bold mb-4">Aloita yhteisöllinen matkustaminen jo tänään 🌱</h2>
-        <p className="mb-8 text-lg">Liity Lyvoon ja löydä kyyti hetkessä – edullisesti ja ekologisesti.</p>
+        <h2 className="text-3xl font-bold mb-4">Start sharing rides today</h2>
+        <p className="mb-8 text-lg">Join Lyvo and find a ride instantly – affordably and eco-friendly.</p>
         <Link
           href="/rides"
           className="bg-white text-[#1e9239] px-8 py-4 font-semibold rounded-xl shadow-md hover:scale-105 hover:shadow-lg transition-transform duration-300 inline-block"
         >
-          Liity nyt
+          Join now
         </Link>
       </motion.section>
 
       <footer className="mt-24 py-8 text-center text-sm text-neutral-600 border-t border-neutral-200">
-        Lyvo © 2025 — Yhdessä vihreämpään huomiseen 🌿
+        Lyvo © 2025 — Together towards a greener tomorrow 🌿
       </footer>
     </motion.main>
+    </>
   );
 }

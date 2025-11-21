@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { notFound } from "next/navigation";
+import LocaleLayoutClient from "@/components/LocaleLayoutClient";
 
 export default async function LocaleLayout({
   children,
@@ -23,8 +24,8 @@ export default async function LocaleLayout({
   }
 
   return (
-    <html lang={locale}>
-      <body>{children}</body>
-    </html>
+    <LocaleLayoutClient>
+      {children}
+    </LocaleLayoutClient>
   );
 }

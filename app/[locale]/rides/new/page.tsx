@@ -2,14 +2,80 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import GoogleMapRide from "@/components/GoogleMapRide";
+
+const translations = {
+  fi: {
+    title: "Lisää kyyti",
+    from: "Lähtöpaikka",
+    fromPlaceholder: "Esim. Helsinki",
+    to: "Kohdepaikka",
+    toPlaceholder: "Esim. Tampere",
+    date: "Päivämäärä",
+    time: "Lähtöaika",
+    seats: "Vapaita paikkoja",
+    price: "Pyyntihinta (€)",
+    addRide: "Lisää kyyti",
+    carBrand: "Auton merkki",
+    carImage: "Auton kuva",
+    selectImage: "Valitse kuva",
+    features: "Kyytiominaisuudet",
+    notes: "Lisätiedot kyydistä",
+    recurring: "Toistuva kyyti",
+    notificationSuccess: "Kyyti lisätty onnistuneesti!",
+    notificationError: "Virhe kyytieä lisättäessä",
+    loginRequired: "Kirjaudu ensin sisään lisätäksesi kyydin!",
+  },
+  en: {
+    title: "Create New Ride",
+    from: "Departure Location",
+    fromPlaceholder: "E.g. Helsinki",
+    to: "Destination",
+    toPlaceholder: "E.g. Tampere",
+    date: "Date",
+    time: "Departure Time",
+    seats: "Available Seats",
+    price: "Price (€)",
+    addRide: "Add Ride",
+    carBrand: "Car Brand",
+    carImage: "Car Image",
+    selectImage: "Select Image",
+    features: "Ride Features",
+    notes: "Additional Notes",
+    recurring: "Recurring Ride",
+    notificationSuccess: "Ride added successfully!",
+    notificationError: "Error adding ride",
+    loginRequired: "Sign in to add a ride!",
+  },
+  sv: {
+    title: "Lägg till skjuts",
+    from: "Avgångsplats",
+    fromPlaceholder: "T.ex. Helsinki",
+    to: "Destination",
+    toPlaceholder: "T.ex. Tampere",
+    date: "Datum",
+    time: "Avgångstid",
+    seats: "Lediga platser",
+    price: "Pris (€)",
+    addRide: "Lägg till skjuts",
+    carBrand: "Bilmärke",
+    carImage: "Bilbild",
+    selectImage: "Välj bild",
+    features: "Skjutsegenskaper",
+    notes: "Ytterligare information",
+    recurring: "Återkommande skjuts",
+    notificationSuccess: "Skjutsen tillagd!",
+    notificationError: "Fel vid tilläggning av skjuts",
+    loginRequired: "Logga in för att lägga till en skjuts!",
+  },
+};
 
 const cities = [
   "Helsinki", "Espoo", "Vantaa", "Tampere", "Turku", "Oulu", "Jyväskylä", "Kuopio", "Lahti", "Pori",
@@ -21,6 +87,10 @@ const cities = [
 ];
 
 export default function NewRide() {
+  const pathname = usePathname();
+  const locale = useMemo(() => (pathname.split('/')[1] || 'fi') as keyof typeof translations, [pathname]);
+  const t = translations[locale] || translations.en;
+
   const router = useRouter();
   const { data: session, status } = useSession();
   const isLoggedIn = !!session;
@@ -223,15 +293,31 @@ export default function NewRide() {
     setProgress(Math.round((filled / total) * 100));
   }, [ride, isRecurring, recurrenceDays]);
 
-  // Smart suggestions for the user
+  // Ehdotukset: älykkäät vinkit käyttäjälle
   useEffect(() => {
     const newSuggestions: string[] = [];
-    if (ride.options.electric) newSuggestions.push("Add 'Quiet ride' and 'Phone charging'.");
-    if (!ride.price) newSuggestions.push("Set a price — typical price is around 10€ / 100 km.");
-    if (distance && duration) newSuggestions.push(`Estimated trip duration: ${duration}.`);
-    if (ride.from && ride.to && !ride.date) newSuggestions.push("Select a date so passengers can book the ride.");
+    if (ride.options.electric) {
+      if (locale === "fi") newSuggestions.push("Lisää 'Hiljainen kyyti' ja 'Latausmahdollisuus'.");
+      else if (locale === "sv") newSuggestions.push("Lägg till 'Tyst skjuts' och 'Laddningsalternativ'.");
+      else newSuggestions.push("Add 'Quiet ride' and 'Phone charging'.");
+    }
+    if (!ride.price) {
+      if (locale === "fi") newSuggestions.push("Aseta pyyntihinta — tyypillinen hinta on noin 10€ / 100 km.");
+      else if (locale === "sv") newSuggestions.push("Ange pris — typiskt pris är omkring 10€ / 100 km.");
+      else newSuggestions.push("Set a price — typical price is around 10€ / 100 km.");
+    }
+    if (distance && duration) {
+      if (locale === "fi") newSuggestions.push(`Matkan arvioitu kesto: ${duration}.`);
+      else if (locale === "sv") newSuggestions.push(`Beräknad restid: ${duration}.`);
+      else newSuggestions.push(`Estimated trip duration: ${duration}.`);
+    }
+    if (ride.from && ride.to && !ride.date) {
+      if (locale === "fi") newSuggestions.push("Valitse päivämäärä, jotta matkustajat voivat varata kyydin.");
+      else if (locale === "sv") newSuggestions.push("Välj ett datum så passagerare kan boka skjutsen.");
+      else newSuggestions.push("Select a date so passengers can book the ride.");
+    }
     setSuggestions(newSuggestions);
-  }, [ride, distance, duration]);
+  }, [ride, distance, duration, locale]);
 
   return (
     <motion.main
@@ -260,10 +346,10 @@ export default function NewRide() {
       {/* Ilmoituspalkki */}
       {showNotification && (
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-shade-500 text-white px-6 py-3 rounded-xl shadow-lg transition-opacity z-50 flex flex-col items-center space-y-3">
-          <p>Ride posted successfully!</p>
-          <div className="flex gap-2">
+          <p>Kyyti lisätty onnistuneesti!</p>
+          <div className="flex gap-3">
             <Link href="/" className="bg-white text-shade-600 px-4 py-2 rounded-lg font-semibold hover:bg-shade-50 transition">
-              Back to home
+              Palaa etusivulle
             </Link>
             <Link href="/rides" className="bg-shade-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-shade-700 transition">
               Näytä lisätty kyyti
@@ -272,12 +358,12 @@ export default function NewRide() {
         </div>
       )}
       {status === "loading" ? (
-        <p className="text-center mt-10 text-gray-600">Loading...</p>
+        <p className="text-center mt-10 text-gray-600">Ladataan...</p>
       ) : !isLoggedIn ? (
-        <p className="text-center mt-10 text-gray-600">Sign in to post a ride 🚗</p>
+        <p className="text-center mt-10 text-gray-600">Kirjaudu sisään lisätäksesi kyydin 🚗</p>
       ) : (
         <>
-      <h1 className="text-4xl font-bold text-shade-700 mb-8">Post a ride</h1>
+      <h1 className="text-4xl font-bold text-shade-700 mb-8">{t.title}</h1>
 
       <form
         onSubmit={handleSubmit}
@@ -301,11 +387,11 @@ export default function NewRide() {
             transition={{ duration: 0.4 }}
           >
             <div className="flex items-center gap-2">
-              <label className="label">Lähtöpaikka</label>
+              <label className="label">{t.from}</label>
               <div className="relative group">
                 <button type="button" className="text-sm font-semibold rounded-full w-5 h-5 flex items-center justify-center border border-shade-300 bg-shade-100 text-shade-600">i</button>
                 <div className="absolute z-50 left-6 top-1/2 -translate-y-1/2 w-56 p-2 bg-white border border-shade-200 text-sm text-neutral-700 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition">
-                  Lisää lähtöpaikka — esim. kaupunki tai tarkempi osoite.
+                  {locale === "fi" ? "Lisää lähtöpaikka — esim. kaupunki tai tarkempi osoite." : locale === "sv" ? "Lägg till avgångsplats — t.ex. stad eller exaktare adress." : "Add departure location — e.g. city or specific address."}
                 </div>
               </div>
             </div>
@@ -315,7 +401,7 @@ export default function NewRide() {
                 name="from"
                 value={ride.from}
                 onChange={(e) => handleCityInput(e, "from")}
-                placeholder="Esim. Helsinki"
+                placeholder={t.fromPlaceholder}
                 className="input mt-1"
                 required
                 autoComplete="off"
@@ -346,11 +432,11 @@ export default function NewRide() {
             transition={{ duration: 0.4, delay: 0.05 }}
           >
             <div className="flex items-center gap-2">
-              <label className="label">Kohdepaikka</label>
+              <label className="label">{t.to}</label>
               <div className="relative group">
                 <button type="button" className="text-sm font-semibold rounded-full w-5 h-5 flex items-center justify-center border border-shade-300 bg-shade-100 text-shade-600">i</button>
                 <div className="absolute z-50 left-6 top-1/2 -translate-y-1/2 w-56 p-2 bg-white border border-shade-200 text-sm text-neutral-700 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition">
-                  Minne olet menossa? Kirjoita kohdekaupunki tai osoite.
+                  {locale === "fi" ? "Minne olet menossa? Kirjoita kohdekaupunki tai osoite." : locale === "sv" ? "Var ska du? Skriv destinationsstaden eller adressen." : "Where are you going? Write the destination city or address."}
                 </div>
               </div>
             </div>
@@ -360,7 +446,7 @@ export default function NewRide() {
                 name="to"
                 value={ride.to}
                 onChange={(e) => handleCityInput(e, "to")}
-                placeholder="Esim. Tampere"
+                placeholder={t.toPlaceholder}
                 className="input mt-1"
                 required
                 autoComplete="off"
@@ -411,11 +497,11 @@ export default function NewRide() {
             transition={{ duration: 0.4, delay: 0.1 }}
           >
             <div className="flex items-center gap-2">
-              <label className="label">Päivämäärä</label>
+              <label className="label">{t.date}</label>
               <div className="relative group">
                 <button type="button" className="text-sm font-semibold rounded-full w-5 h-5 flex items-center justify-center border border-shade-300 bg-shade-100 text-shade-600">i</button>
                 <div className="absolute z-50 left-6 top-1/2 -translate-y-1/2 w-56 p-2 bg-white border border-shade-200 text-sm text-neutral-700 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition">
-                  Valitse matkasi päivämäärä.
+                  {locale === "fi" ? "Valitse matkasi päivämäärä." : locale === "sv" ? "Välj datumet för din resa." : "Select the date for your trip."}
                 </div>
               </div>
             </div>
@@ -436,11 +522,11 @@ export default function NewRide() {
             transition={{ duration: 0.4, delay: 0.15 }}
           >
             <div className="flex items-center gap-2">
-              <label className="label">Lähtöaika</label>
+              <label className="label">{t.time}</label>
               <div className="relative group">
                 <button type="button" className="text-sm font-semibold rounded-full w-5 h-5 flex items-center justify-center border border-shade-300 bg-shade-100 text-shade-600">i</button>
                 <div className="absolute z-50 left-6 top-1/2 -translate-y-1/2 w-56 p-2 bg-white border border-shade-200 text-sm text-neutral-700 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition">
-                  Mihin aikaan kyyti lähtee liikkeelle.
+                  {locale === "fi" ? "Mihin aikaan kyyti lähtee liikkeelle." : locale === "sv" ? "Vad är tiden för avgång?" : "What time does the ride depart?"}
                 </div>
               </div>
             </div>
@@ -462,11 +548,11 @@ export default function NewRide() {
           transition={{ duration: 0.4, delay: 0.2 }}
         >
           <div className="flex items-center gap-2">
-            <label className="label">Vapaita paikkoja</label>
+            <label className="label">{t.seats}</label>
             <div className="relative group">
               <button type="button" className="text-sm font-semibold rounded-full w-5 h-5 flex items-center justify-center border border-shade-300 bg-shade-100 text-shade-600">i</button>
               <div className="absolute z-50 left-6 top-1/2 -translate-y-1/2 w-56 p-2 bg-white border border-shade-200 text-sm text-neutral-700 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition">
-                Kuinka monta matkustajaa mahtuu kyytiin.
+                {locale === "fi" ? "Kuinka monta matkustajaa mahtuu kyytiin." : locale === "sv" ? "Hur många passagerare får plats i fordonet?" : "How many passengers fit in your vehicle?"}
               </div>
             </div>
           </div>
@@ -488,11 +574,11 @@ export default function NewRide() {
           transition={{ duration: 0.4, delay: 0.25 }}
         >
           <div className="flex items-center gap-2">
-            <label className="label">Pyyntihinta (€)</label>
+            <label className="label">{t.price}</label>
             <div className="relative group">
               <button type="button" className="text-sm font-semibold rounded-full w-5 h-5 flex items-center justify-center border border-shade-300 bg-shade-100 text-shade-600">i</button>
               <div className="absolute left-6 top-1/2 -translate-y-1/2 w-56 p-2 bg-white border border-shade-200 text-sm text-neutral-700 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition">
-                Paljonko pyydät kyydistä per henkilö.
+                {locale === "fi" ? "Paljonko pyydät kyydistä per henkilö." : locale === "sv" ? "Vad åtalar du för skjutsen per person?" : "How much do you charge per person?"}
               </div>
             </div>
           </div>
@@ -510,19 +596,19 @@ export default function NewRide() {
             onClick={() => setShowDiscount(!showDiscount)}
             className="mt-2 text-sm text-shade-600 hover:text-shade-700 underline"
           >
-            Lisävalinnat
+            {locale === "fi" ? "Lisävalinnat" : locale === "sv" ? "Ytterligare alternativ" : "More options"}
             <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 w-56 p-2 bg-white border border-shade-200 text-sm text-neutral-700 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition pointer-events-none">
-              Halutessasi voit tarjota alennetun hinnan, jos auto täyttyy kokonaan.
+              {locale === "fi" ? "Halutessasi voit tarjota alennetun hinnan, jos auto täyttyy kokonaan." : locale === "sv" ? "Du kan erbjuda ett rabatterat pris om bilen fylls." : "You can offer a discounted price if the car fills up."}
             </div>
           </button>
           {showDiscount && (
             <div className="mt-4">
               <div className="flex items-center gap-2">
-                <label className="label">Alennettu hinta (€)</label>
+                <label className="label">{locale === "fi" ? "Alennettu hinta (€)" : locale === "sv" ? "Rabatterat pris (€)" : "Discounted price (€)"}</label>
                 <div className="relative group">
                   <button type="button" className="text-sm font-semibold rounded-full w-5 h-5 flex items-center justify-center border border-shade-300 bg-shade-100 text-shade-600">i</button>
                   <div className="absolute z-50 left-6 top-1/2 -translate-y-1/2 w-56 p-2 bg-white border border-shade-200 text-sm text-neutral-700 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition">
-                    Halutessasi voit tarjota alennetun hinnan, jos auto täyttyy kokonaan.
+                    {locale === "fi" ? "Halutessasi voit tarjota alennetun hinnan, jos auto täyttyy kokonaan." : locale === "sv" ? "Du kan erbjuda ett rabatterat pris om bilen fylls." : "You can offer a discounted price if the car fills up."}
                   </div>
                 </div>
               </div>
@@ -545,17 +631,17 @@ export default function NewRide() {
           transition={{ duration: 0.4, delay: 0.3 }}
         >
           <div>
-            <label className="label">Auton merkki</label>
+            <label className="label">{t.carBrand}</label>
             <input
               type="text"
               value={carBrand}
               onChange={(e) => setCarBrand(e.target.value)}
-              placeholder="Esim. Tesla, Toyota..."
+              placeholder={locale === "fi" ? "Esim. Tesla, Toyota..." : locale === "sv" ? "T.ex. Tesla, Toyota..." : "E.g. Tesla, Toyota..."}
               className="input mt-1"
             />
           </div>
           <div>
-            <label className="label">Auton kuva</label>
+            <label className="label">{t.carImage}</label>
             <input
               type="file"
               accept="image/*"
@@ -577,32 +663,32 @@ export default function NewRide() {
 
         <div>
           <div className="flex items-center gap-2 mb-2 block">
-            <label className="label">Kyytiominaisuudet</label>
+            <label className="label">{t.features}</label>
             <div className="relative group">
               <button type="button" className="text-sm font-semibold rounded-full w-5 h-5 flex items-center justify-center border border-shade-300 bg-shade-100 text-shade-600">i</button>
               <div className="absolute z-50 left-6 top-1/2 -translate-y-1/2 w-56 p-2 bg-white border border-shade-200 text-sm text-neutral-700 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition">
-                Lisää kyytiominaisuuksia ja erotu joukosta paremmin.
+                {locale === "fi" ? "Lisää kyytiominaisuuksia ja erotu joukosta paremmin." : locale === "sv" ? "Lägg till skjutsegenskaper och sticka ut bättre." : "Add ride features to stand out better."}
               </div>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3 max-h-48 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-shade-300 scrollbar-track-shade-50 rounded-xl">
             {[
-              { key: "electric", label: "Sähköauto" },
-              { key: "van", label: "Tila-auto" },
-              { key: "pets", label: "Lemmikit sallittu" },
-              { key: "quiet", label: "Hiljainen kyyti" },
-              { key: "music", label: "Musiikkia kyydissä" },
-              { key: "ac", label: "Ilmastointi" },
-              { key: "talkative", label: "Puhelias kuski" },
-              { key: "smokeFree", label: "Savuton kyyti" },
-              { key: "wifi", label: "WiFi käytössä" },
-              { key: "charging", label: "Latausmahdollisuus" },
-              { key: "bikeSpot", label: "Polkupyörän kuljetus mahdollista" },
-              { key: "pickUp", label: "Nouto sovittavissa" },
-              { key: "restStop", label: "Taukopysähdyksiä matkalla" },
-              { key: "startTime", label: "Joustava lähtöaika" },
-              { key: "bag", label: "Tilaa laukuille" },
-              { key: "rentCar", label: "Vuokra- tai yhteisauto" },
+              { key: "electric", label: locale === "fi" ? "Sähköauto" : locale === "sv" ? "Elbilar" : "Electric car" },
+              { key: "van", label: locale === "fi" ? "Tila-auto" : locale === "sv" ? "Skåpbil" : "Van" },
+              { key: "pets", label: locale === "fi" ? "Lemmikit sallittu" : locale === "sv" ? "Husdjur tillåtna" : "Pets allowed" },
+              { key: "quiet", label: locale === "fi" ? "Hiljainen kyyti" : locale === "sv" ? "Tyst skjuts" : "Quiet ride" },
+              { key: "music", label: locale === "fi" ? "Musiikkia kyydissä" : locale === "sv" ? "Musik under skjutsen" : "Music during ride" },
+              { key: "ac", label: locale === "fi" ? "Ilmastointi" : locale === "sv" ? "Luftkonditionering" : "Air conditioning" },
+              { key: "talkative", label: locale === "fi" ? "Puhelias kuski" : locale === "sv" ? "Pratgladd förare" : "Chatty driver" },
+              { key: "smokeFree", label: locale === "fi" ? "Savuton kyyti" : locale === "sv" ? "Rökfri skjuts" : "Smoke-free" },
+              { key: "wifi", label: locale === "fi" ? "WiFi käytössä" : locale === "sv" ? "WiFi tillgängligt" : "WiFi available" },
+              { key: "charging", label: locale === "fi" ? "Latausmahdollisuus" : locale === "sv" ? "Laddningsalternativ" : "Phone charging" },
+              { key: "bikeSpot", label: locale === "fi" ? "Polkupyörän kuljetus mahdollista" : locale === "sv" ? "Cykelöverföring möjlig" : "Bike transportation" },
+              { key: "pickUp", label: locale === "fi" ? "Nouto sovittavissa" : locale === "sv" ? "Hämtning möjlig" : "Pickup available" },
+              { key: "restStop", label: locale === "fi" ? "Taukopysähdyksiä matkalla" : locale === "sv" ? "Rastpauser på vägen" : "Rest stops on route" },
+              { key: "startTime", label: locale === "fi" ? "Joustava lähtöaika" : locale === "sv" ? "Flexibel avgångstid" : "Flexible departure" },
+              { key: "bag", label: locale === "fi" ? "Tilaa laukuille" : locale === "sv" ? "Utrymme för bagage" : "Large luggage space" },
+              { key: "rentCar", label: locale === "fi" ? "Vuokra- tai yhteisauto" : locale === "sv" ? "Hyrbil eller delad bil" : "Rental/shared car" },
             ].map((opt) => (
               <button
                 type="button"
@@ -626,11 +712,11 @@ export default function NewRide() {
           transition={{ duration: 0.4, delay: 0.35 }}
         >
           <div className="flex items-center gap-2">
-            <label className="label">Lisätiedot kyydistä</label>
+            <label className="label">{t.notes}</label>
             <div className="relative group">
               <button type="button" className="text-sm font-semibold rounded-full w-5 h-5 flex items-center justify-center border border-shade-300 bg-shade-100 text-shade-600">i</button>
               <div className="absolute left-6 top-1/2 -translate-y-1/2 w-56 p-2 bg-white border border-shade-200 text-sm text-neutral-700 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition">
-                Voit kertoa esimerkiksi auton mallista, pysähdyksistä tai tunnelmasta.
+                {locale === "fi" ? "Voit kertoa esimerkiksi auton mallista, pysähdyksistä tai tunnelmasta." : locale === "sv" ? "Du kan berätta om bilens modell, stopp eller atmosfär." : "You can describe the car model, stops, or atmosphere."}
               </div>
             </div>
           </div>
@@ -652,7 +738,7 @@ export default function NewRide() {
             onChange={() => setIsRecurring((v) => !v)}
             className="accent-shade-500"
           />
-          <label htmlFor="recurring" className="text-shade-700 font-medium text-sm cursor-pointer">Toistuva kyyti</label>
+          <label htmlFor="recurring" className="text-shade-700 font-medium text-sm cursor-pointer">{t.recurring}</label>
         </div>
         {/* Päivien valinta */}
         {isRecurring && (
@@ -682,7 +768,7 @@ export default function NewRide() {
             transition={{ duration: 0.4, delay: 0.4 }}
             className="mt-6 p-4 bg-shade-50 border border-shade-200 rounded-xl shadow-sm text-left"
           >
-            <h3 className="text-shade-700 font-semibold mb-2">Ehdotukset</h3>
+            <h3 className="text-shade-700 font-semibold mb-2">{locale === "fi" ? "Ehdotukset" : locale === "sv" ? "Förslag" : "Suggestions"}</h3>
             <ul className="list-disc pl-6 text-shade-600 space-y-1">
               {suggestions.map((s, i) => (
                 <li key={i} className="hover:text-shade-800 transition">{s}</li>
@@ -697,7 +783,7 @@ export default function NewRide() {
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.97 }}
         >
-          Post ride
+          {t.addRide}
         </motion.button>
       </form>
         </>

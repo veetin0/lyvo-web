@@ -24,6 +24,7 @@ export async function GET(req: Request): Promise<NextResponse> {
         id,
         created_at,
         ride_id,
+        status,
         ride:ride_id (
           id,
           from_city,
@@ -107,10 +108,10 @@ export async function POST(req: Request): Promise<NextResponse> {
       return NextResponse.json({ error: "Already booked" }, { status: 400 });
     }
 
-    // Create booking
+    // Create booking with pending status
     const { data: booking, error: bookingError } = await supabase
       .from("bookings")
-      .insert({ user_email: token.email, ride_id: rideId })
+      .insert({ user_email: token.email, ride_id: rideId, status: "pending" })
       .select();
 
     if (bookingError) {
