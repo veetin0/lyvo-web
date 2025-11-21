@@ -5,12 +5,40 @@ import { useState } from "react";
 import { usePathname } from "next/navigation";
 import AuthButtons from "@/components/AuthButtons";
 
+const translations = {
+  fi: {
+    findRide: "Etsi kyyti",
+    shareRide: "Jaa kyyti",
+    about: "Tietoa meistä",
+    contact: "Ota yhteyttä",
+    profile: "Profiili",
+    language: "Kieli",
+  },
+  en: {
+    findRide: "Find a Ride",
+    shareRide: "Share a Ride",
+    about: "About",
+    contact: "Contact",
+    profile: "Profile",
+    language: "Language",
+  },
+  sv: {
+    findRide: "Hitta skjuts",
+    shareRide: "Dela skjuts",
+    about: "Om oss",
+    contact: "Kontakta oss",
+    profile: "Profil",
+    language: "Språk",
+  },
+};
+
 export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const pathname = usePathname();
 
   // Extract current locale from pathname
-  const currentLocale = pathname.split('/')[1] || 'fi';
+  const currentLocale = (pathname.split('/')[1] || 'fi') as keyof typeof translations;
+  const t = translations[currentLocale] || translations.en;
 
   // Function to switch language
   const switchLanguage = (newLocale: string) => {
@@ -39,19 +67,19 @@ export default function Header() {
         {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center gap-8 text-[1rem] font-medium text-emerald-700">
           <Link href={`/${currentLocale}/rides`} className="hover:text-emerald-500 transition-colors">
-            Find a Ride
+            {t.findRide}
           </Link>
           <Link href={`/${currentLocale}/rides/new`} className="hover:text-emerald-500 transition-colors">
-            Share a Ride
+            {t.shareRide}
           </Link>
           <Link href={`/${currentLocale}/about`} className="hover:text-emerald-500 transition-colors">
-            About
+            {t.about}
           </Link>
           <Link href={`/${currentLocale}/contact`} className="hover:text-emerald-500 transition-colors">
-            Contact
+            {t.contact}
           </Link>
           <Link href={`/${currentLocale}/profile`} className="hover:text-emerald-500 transition-colors">
-            Profile
+            {t.profile}
           </Link>
           
           {/* Language Switcher */}
@@ -112,40 +140,40 @@ export default function Header() {
               className="px-4 py-2 hover:bg-emerald-50 rounded-lg text-emerald-700 font-medium"
               onClick={() => setMobileMenuOpen(false)}
             >
-              Find a Ride
+              {t.findRide}
             </Link>
             <Link 
               href={`/${currentLocale}/rides/new`}
               className="px-4 py-2 hover:bg-emerald-50 rounded-lg text-emerald-700 font-medium"
               onClick={() => setMobileMenuOpen(false)}
             >
-              Share a Ride
+              {t.shareRide}
             </Link>
             <Link 
               href={`/${currentLocale}/about`}
               className="px-4 py-2 hover:bg-emerald-50 rounded-lg text-emerald-700 font-medium"
               onClick={() => setMobileMenuOpen(false)}
             >
-              About
+              {t.about}
             </Link>
             <Link 
               href={`/${currentLocale}/contact`}
               className="px-4 py-2 hover:bg-emerald-50 rounded-lg text-emerald-700 font-medium"
               onClick={() => setMobileMenuOpen(false)}
             >
-              Contact
+              {t.contact}
             </Link>
             <Link 
               href={`/${currentLocale}/profile`}
               className="px-4 py-2 hover:bg-emerald-50 rounded-lg text-emerald-700 font-medium"
               onClick={() => setMobileMenuOpen(false)}
             >
-              Profile
+              {t.profile}
             </Link>
             
             {/* Language Switcher Mobile */}
             <div className="px-4 py-2 border-t border-emerald-100 mt-2">
-              <p className="text-xs font-semibold text-emerald-600 mb-2">Language</p>
+              <p className="text-xs font-semibold text-emerald-600 mb-2">{t.language}</p>
               <div className="flex gap-2">
                 <Link 
                   href={switchLanguage('fi')}
