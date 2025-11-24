@@ -3,13 +3,7 @@ import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { createClient } from "@supabase/supabase-js";
 
-type RouteContext = {
-  params: {
-    id: string;
-  };
-};
-
-export async function PUT(req: NextRequest, context: RouteContext): Promise<NextResponse> {
+export async function PUT(req: NextRequest, context: any): Promise<NextResponse> {
   try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -21,8 +15,8 @@ export async function PUT(req: NextRequest, context: RouteContext): Promise<Next
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { bookingId: bodyBookingId, action } = await req.json();
-    const { params } = context;
+  const { bookingId: bodyBookingId, action } = await req.json();
+    const { params } = context as { params: { id: string } };
     const bookingId = bodyBookingId ?? params.id;
 
     if (!bookingId || !action) {
@@ -91,7 +85,7 @@ export async function PUT(req: NextRequest, context: RouteContext): Promise<Next
   }
 }
 
-export async function DELETE(req: NextRequest, context: RouteContext): Promise<NextResponse> {
+export async function DELETE(req: NextRequest, context: any): Promise<NextResponse> {
   try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -103,7 +97,8 @@ export async function DELETE(req: NextRequest, context: RouteContext): Promise<N
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const bookingId = context.params.id;
+  const { params } = context as { params: { id: string } };
+  const bookingId = params.id;
     if (!bookingId) {
       return NextResponse.json({ error: "Missing booking id" }, { status: 400 });
     }
