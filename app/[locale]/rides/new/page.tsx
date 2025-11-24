@@ -5,23 +5,34 @@ import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import GoogleMapRide from "@/components/GoogleMapRide";
+import LocationAutocomplete from "@/components/LocationAutocomplete";
+import StopLocationInput from "@/components/StopLocationInput";
+import { PlaceSelection } from "@/components/lib/places";
+
+type RideStop = {
+  city: string;
+  price: string;
+  place?: PlaceSelection | null;
+};
 
 const translations = {
   fi: {
     title: "Lisää kyyti",
-    from: "Lähtöpaikka",
-    fromPlaceholder: "Esim. Helsinki",
-    to: "Kohdepaikka",
-    toPlaceholder: "Esim. Tampere",
+    from: "Lähtö",
+    fromPlaceholder: "Kirjoita lähtöpaikka",
+    to: "Määränpää",
+    toPlaceholder: "Kirjoita määränpää",
     date: "Päivämäärä",
     time: "Lähtöaika",
     seats: "Vapaita paikkoja",
     price: "Pyyntihinta (€)",
+  priceLimitInfo: "Suurin sallittu hinta per matkustaja ({rate} €/km / {seats}): {price} €",
+  priceLimitExceeded: "Hinta ylittää sallitun enimmäishinnan per matkustaja ({price} €).",
     addRide: "Lisää kyyti",
     carBrand: "Auton merkki",
     carImage: "Auton kuva",
@@ -29,6 +40,12 @@ const translations = {
     features: "Kyytiominaisuudet",
     notes: "Lisätiedot kyydistä",
     recurring: "Toistuva kyyti",
+    stops: "Pysähdyspaikkakavalikat",
+  stopLabel: "Pysähdyspaikka {number}",
+    addStop: "Lisää pysähdyspaikka",
+    removeStop: "Poista pysähdyspaikka",
+    stopCity: "Pysähdyskaupunki",
+    stopPrice: "Hinta pysähdyspisteestä (€)",
     notificationSuccess: "Kyyti lisätty onnistuneesti!",
     notificationError: "Virhe kyytieä lisättäessä",
     loginRequired: "Kirjaudu ensin sisään lisätäksesi kyydin!",
@@ -36,13 +53,15 @@ const translations = {
   en: {
     title: "Create New Ride",
     from: "Departure Location",
-    fromPlaceholder: "E.g. Helsinki",
+    fromPlaceholder: "Enter starting location",
     to: "Destination",
-    toPlaceholder: "E.g. Tampere",
+    toPlaceholder: "Enter destination",
     date: "Date",
     time: "Departure Time",
     seats: "Available Seats",
     price: "Price (€)",
+  priceLimitInfo: "Maximum allowed price per passenger ({rate} €/km / {seats}): {price} €",
+  priceLimitExceeded: "Price exceeds the allowed maximum per passenger ({price} €).",
     addRide: "Add Ride",
     carBrand: "Car Brand",
     carImage: "Car Image",
@@ -50,20 +69,28 @@ const translations = {
     features: "Ride Features",
     notes: "Additional Notes",
     recurring: "Recurring Ride",
+    stops: "Stopping Points",
+  stopLabel: "Stop #{number}",
+    addStop: "Add Stop",
+    removeStop: "Remove Stop",
+    stopCity: "Stop City",
+    stopPrice: "Price from Stop (€)",
     notificationSuccess: "Ride added successfully!",
     notificationError: "Error adding ride",
     loginRequired: "Sign in to add a ride!",
   },
   sv: {
     title: "Lägg till skjuts",
-    from: "Avgångsplats",
-    fromPlaceholder: "T.ex. Helsinki",
-    to: "Destination",
-    toPlaceholder: "T.ex. Tampere",
+    from: "Från",
+    fromPlaceholder: "Skriv avgångsplats",
+    to: "Till",
+    toPlaceholder: "Skriv destination",
     date: "Datum",
     time: "Avgångstid",
     seats: "Lediga platser",
     price: "Pris (€)",
+  priceLimitInfo: "Högsta tillåtna pris per passagerare ({rate} €/km / {seats}): {price} €",
+  priceLimitExceeded: "Priset överskrider det tillåtna maxpriset per passagerare ({price} €).",
     addRide: "Lägg till skjuts",
     carBrand: "Bilmärke",
     carImage: "Bilbild",
@@ -71,6 +98,12 @@ const translations = {
     features: "Skjutsegenskaper",
     notes: "Ytterligare information",
     recurring: "Återkommande skjuts",
+    stops: "Hållplatser",
+  stopLabel: "Stopp #{number}",
+    addStop: "Lägg till stopp",
+    removeStop: "Ta bort stopp",
+    stopCity: "Stoppstad",
+    stopPrice: "Pris från stopp (€)",
     notificationSuccess: "Skjutsen tillagd!",
     notificationError: "Fel vid tilläggning av skjuts",
     loginRequired: "Logga in för att lägga till en skjuts!",
@@ -86,9 +119,21 @@ const cities = [
   "Tallinna", "Riga", "Vilna", "Reykjavik", "Amsterdam", "Berlin", "Warszawa", "Praha", "Budapest"
 ];
 
+const TOTAL_MAX_RATE_PER_KM = 0.15;
+
+const formatNumberForLocale = (value: number, locale: keyof typeof translations): string => {
+  if (!Number.isFinite(value)) {
+    return "0.00";
+  }
+  return value.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
 export default function NewRide() {
   const pathname = usePathname();
-  const locale = useMemo(() => (pathname.split('/')[1] || 'fi') as keyof typeof translations, [pathname]);
+  const locale = useMemo(() => {
+    const rawLocale = pathname.split("/")[1] || "fi";
+    return (Object.prototype.hasOwnProperty.call(translations, rawLocale) ? rawLocale : "en") as keyof typeof translations;
+  }, [pathname]);
   const t = translations[locale] || translations.en;
 
   const router = useRouter();
@@ -122,7 +167,6 @@ export default function NewRide() {
       smokeFree: false,
       wifi: false,
       charging: false,
-      studentDiscount: false,
       bikeSpot: false,
       pickUp: false,
       restStop: false,
@@ -133,23 +177,74 @@ export default function NewRide() {
     notes: "",
   });
 
-  // Uudet tilat
+  // Stops state: array of stop metadata with optional place details
+  const [stops, setStops] = useState<RideStop[]>([]);
+  const [fromSelection, setFromSelection] = useState<PlaceSelection | null>(null);
+  const [toSelection, setToSelection] = useState<PlaceSelection | null>(null);
+
+  // Recurring ride state
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurrenceDays, setRecurrenceDays] = useState<string[]>([]);
   const [distance, setDistance] = useState<string>("");
+  const [distanceMeters, setDistanceMeters] = useState<number | null>(null);
   const [duration, setDuration] = useState<string>("");
+  const [durationSeconds, setDurationSeconds] = useState<number | null>(null);
+  const [routePolyline, setRoutePolyline] = useState<string | null>(null);
   const [progress, setProgress] = useState<number>(0);
   const [showNotification, setShowNotification] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState<string>("");
   const [notificationType, setNotificationType] = useState<"success" | "error">("success");
 
-  const handleRouteSelected = (routeInfo: { distance: string; duration: string; polyline: string }) => {
+  const handleRouteSelected = (routeInfo: { distance: string; duration: string; polyline: string; distanceMeters: number; durationSeconds: number }) => {
     setDistance(routeInfo.distance);
     setDuration(routeInfo.duration);
+    setDistanceMeters(Number.isFinite(routeInfo.distanceMeters) ? routeInfo.distanceMeters : null);
+    setDurationSeconds(Number.isFinite(routeInfo.durationSeconds) ? routeInfo.durationSeconds : null);
+    setRoutePolyline(routeInfo.polyline || null);
   };
+
+  const resetRouteEstimates = useCallback(() => {
+    setDistance("");
+    setDuration("");
+    setDistanceMeters(null);
+    setDurationSeconds(null);
+    setRoutePolyline(null);
+  }, [setDistance, setDuration, setDistanceMeters, setDurationSeconds, setRoutePolyline]);
 
   const [showDiscount, setShowDiscount] = useState(false);
   const [discountPrice, setDiscountPrice] = useState("");
+
+  const seatsCount = Math.max(
+    Number.isFinite(ride.seats) ? Math.floor(ride.seats) : 1,
+    1
+  );
+
+  const perPassengerRate = useMemo(() => TOTAL_MAX_RATE_PER_KM / seatsCount, [seatsCount]);
+
+  const maxPrice = useMemo(() => {
+    if (distanceMeters === null || distanceMeters <= 0) {
+      return null;
+    }
+    const distanceKm = distanceMeters / 1000;
+    return Math.round(distanceKm * perPassengerRate * 100) / 100;
+  }, [distanceMeters, perPassengerRate]);
+
+  const hasPriceValue = ride.price !== "" && !Number.isNaN(Number(ride.price));
+  const priceNumber = hasPriceValue ? Number(ride.price) : null;
+  const isPriceOverLimit = Boolean(maxPrice !== null && priceNumber !== null && priceNumber > maxPrice);
+
+  const maxPriceDisplay = maxPrice !== null ? formatNumberForLocale(maxPrice, locale) : null;
+  const totalRateDisplay = formatNumberForLocale(TOTAL_MAX_RATE_PER_KM, locale);
+  const priceLimitInfo = maxPriceDisplay
+    ? t.priceLimitInfo
+        .replace("{rate}", totalRateDisplay)
+        .replace("{seats}", seatsCount.toString())
+        .replace("{price}", maxPriceDisplay)
+    : null;
+  const priceLimitExceededMessage = isPriceOverLimit && maxPriceDisplay
+    ? t.priceLimitExceeded.replace("{price}", maxPriceDisplay)
+    : null;
+  const isSubmitDisabled = isPriceOverLimit;
 
   // Älykkäät ehdotukset ja auton merkki/kuva -tilat
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -186,6 +281,45 @@ export default function NewRide() {
     });
   };
 
+  // Stop management handlers
+  const handleAddStop = () => {
+    setStops((prev) => [...prev, { city: "", price: "", place: null }]);
+    resetRouteEstimates();
+  };
+
+  const handleRemoveStop = (index: number) => {
+    setStops((prev) => prev.filter((_, i) => i !== index));
+    resetRouteEstimates();
+  };
+
+  const handleStopChange = useCallback((index: number, field: "city" | "price", value: string) => {
+    setStops((prev) => {
+      const updated = [...prev];
+      const nextStop = { ...updated[index], [field]: value } as RideStop;
+      if (field === "city") {
+        nextStop.place = null;
+      }
+      updated[index] = nextStop;
+      return updated;
+    });
+    if (field === "city") {
+      resetRouteEstimates();
+    }
+  }, [resetRouteEstimates]);
+
+  const handleStopSelect = useCallback((index: number, selection: PlaceSelection) => {
+    setStops((prev) => {
+      const updated = [...prev];
+      updated[index] = {
+        ...updated[index],
+        city: selection.description,
+        place: selection,
+      };
+      return updated;
+    });
+    resetRouteEstimates();
+  }, [resetRouteEstimates]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     console.log("Session:", session);
@@ -196,6 +330,8 @@ export default function NewRide() {
       departure: new Date(`${ride.date}T${ride.time}`).toISOString(),
       seats: ride.seats,
       price_eur: ride.price,
+      distance_meters: distanceMeters,
+      duration_seconds: durationSeconds,
     });
     if (!isLoggedIn || !session?.user) {
       setNotificationType("error");
@@ -215,6 +351,18 @@ export default function NewRide() {
       return;
     }
 
+    if (maxPrice !== null && priceNumber !== null && priceNumber > maxPrice) {
+      const limitMessage = t.priceLimitExceeded.replace(
+        "{price}",
+        maxPriceDisplay ?? formatNumberForLocale(maxPrice, locale)
+      );
+      setNotificationType("error");
+      setNotificationMessage(limitMessage);
+      setShowNotification(true);
+      setTimeout(() => setShowNotification(false), 3000);
+      return;
+    }
+
     const { error } = await supabase.from("rides").insert([
       {
         owner: (session?.user as any)?.id,
@@ -226,6 +374,10 @@ export default function NewRide() {
         car: carBrand || null,
         driver_name: (session.user as any)?.name || "Tuntematon",
         driver_rating: 0,
+        stops: JSON.stringify(stops),
+  distance_meters: distanceMeters !== null ? Math.round(distanceMeters) : null,
+  duration_seconds: durationSeconds !== null ? Math.round(durationSeconds) : null,
+  route_polyline: routePolyline,
       },
     ]);
 
@@ -241,7 +393,7 @@ export default function NewRide() {
       setShowNotification(true);
       setTimeout(() => {
         setShowNotification(false);
-        router.push("/rides");
+        router.push(`/${locale}/rides`);
       }, 1500);
     }
   };
@@ -264,19 +416,10 @@ export default function NewRide() {
 
   // Simuloi reitti-integraatio: kun from ja to on täytetty, laske satunnaisesti etäisyys ja kesto
   useEffect(() => {
-    if (ride.from && ride.to) {
-      // Simuloidaan etäisyys ja kesto
-      const km = Math.floor(80 + Math.random() * 120); // 80-200 km
-      const min = Math.floor(60 + Math.random() * 120); // 1h - 3h
-      const h = Math.floor(min / 60);
-      const m = min % 60;
-      setDistance(`${km} km`);
-      setDuration(`${h} h ${m} min`);
-    } else {
-      setDistance("");
-      setDuration("");
+    if (!ride.from || !ride.to) {
+      resetRouteEstimates();
     }
-  }, [ride.from, ride.to]);
+  }, [ride.from, ride.to, resetRouteEstimates]);
 
   // Progressbar: laske täyttöaste
   useEffect(() => {
@@ -348,10 +491,10 @@ export default function NewRide() {
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-shade-500 text-white px-6 py-3 rounded-xl shadow-lg transition-opacity z-50 flex flex-col items-center space-y-3">
           <p>Kyyti lisätty onnistuneesti!</p>
           <div className="flex gap-3">
-            <Link href="/" className="bg-white text-shade-600 px-4 py-2 rounded-lg font-semibold hover:bg-shade-50 transition">
+            <Link href={`/${locale}`} className="bg-white text-shade-600 px-4 py-2 rounded-lg font-semibold hover:bg-shade-50 transition">
               Palaa etusivulle
             </Link>
-            <Link href="/rides" className="bg-shade-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-shade-700 transition">
+            <Link href={`/${locale}/rides`} className="bg-shade-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-shade-700 transition">
               Näytä lisätty kyyti
             </Link>
           </div>
@@ -378,7 +521,7 @@ export default function NewRide() {
             />
           </div>
         </div>
-        {/* From and To Fields - Side by Side */}
+        {/* From and To Fields - Using Google Places Autocomplete */}
         <div className="flex gap-4">
           <motion.div
             className="flex-1"
@@ -391,38 +534,25 @@ export default function NewRide() {
               <div className="relative group">
                 <button type="button" className="text-sm font-semibold rounded-full w-5 h-5 flex items-center justify-center border border-shade-300 bg-shade-100 text-shade-600">i</button>
                 <div className="absolute z-50 left-6 top-1/2 -translate-y-1/2 w-56 p-2 bg-white border border-shade-200 text-sm text-neutral-700 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition">
-                  {locale === "fi" ? "Lisää lähtöpaikka — esim. kaupunki tai tarkempi osoite." : locale === "sv" ? "Lägg till avgångsplats — t.ex. stad eller exaktare adress." : "Add departure location — e.g. city or specific address."}
+                  {locale === "fi" ? "Kirjoita lähtöpaikka, esim. 'Töölö' ja valitse ehdotuksista." : locale === "sv" ? "Skriv avgångsplatsen, t.ex. 'Tölö' och välj från förslagen." : "Type the starting location, e.g. 'Töölö' and select from suggestions."}
                 </div>
               </div>
             </div>
-            <div className="relative">
-              <input
-                type="text"
-                name="from"
-                value={ride.from}
-                onChange={(e) => handleCityInput(e, "from")}
-                placeholder={t.fromPlaceholder}
-                className="input mt-1"
-                required
-                autoComplete="off"
-              />
-              {fromSuggestions.length > 0 && (
-                <ul className="absolute z-10 bg-white border border-neutral-200 rounded-lg shadow-lg mt-1 w-full text-left">
-                  {fromSuggestions.map((city, i) => (
-                    <li
-                      key={i}
-                      onClick={() => {
-                        setRide({ ...ride, from: city });
-                        setFromSuggestions([]);
-                      }}
-                      className="px-4 py-2 hover:bg-shade-50 cursor-pointer"
-                    >
-                      {city}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+            <LocationAutocomplete
+              value={ride.from}
+              onChange={(value) => {
+                setRide((prev) => ({ ...prev, from: value }));
+                setFromSelection(null);
+                resetRouteEstimates();
+              }}
+              onSelect={(selection) => {
+                setRide((prev) => ({ ...prev, from: selection.description }));
+                setFromSelection(selection);
+                resetRouteEstimates();
+              }}
+              placeholder={t.fromPlaceholder}
+              className="mt-1"
+            />
           </motion.div>
 
           <motion.div
@@ -436,40 +566,106 @@ export default function NewRide() {
               <div className="relative group">
                 <button type="button" className="text-sm font-semibold rounded-full w-5 h-5 flex items-center justify-center border border-shade-300 bg-shade-100 text-shade-600">i</button>
                 <div className="absolute z-50 left-6 top-1/2 -translate-y-1/2 w-56 p-2 bg-white border border-shade-200 text-sm text-neutral-700 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition">
-                  {locale === "fi" ? "Minne olet menossa? Kirjoita kohdekaupunki tai osoite." : locale === "sv" ? "Var ska du? Skriv destinationsstaden eller adressen." : "Where are you going? Write the destination city or address."}
+                  {locale === "fi" ? "Kirjoita kohdekaupunki, esim. 'Espoo' ja valitse ehdotuksista." : locale === "sv" ? "Skriv destinationsstaden, t.ex. 'Esbo' och välj från förslagen." : "Type the destination, e.g. 'Espoo' and select from suggestions."}
                 </div>
               </div>
             </div>
-            <div className="relative">
-              <input
-                type="text"
-                name="to"
-                value={ride.to}
-                onChange={(e) => handleCityInput(e, "to")}
-                placeholder={t.toPlaceholder}
-                className="input mt-1"
-                required
-                autoComplete="off"
-              />
-              {toSuggestions.length > 0 && (
-                <ul className="absolute z-10 bg-white border border-neutral-200 rounded-lg shadow-lg mt-1 w-full text-left">
-                  {toSuggestions.map((city, i) => (
-                    <li
-                      key={i}
-                      onClick={() => {
-                        setRide({ ...ride, to: city });
-                        setToSuggestions([]);
-                      }}
-                      className="px-4 py-2 hover:bg-shade-50 cursor-pointer"
-                    >
-                      {city}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+            <LocationAutocomplete
+              value={ride.to}
+              onChange={(value) => {
+                setRide((prev) => ({ ...prev, to: value }));
+                setToSelection(null);
+                resetRouteEstimates();
+              }}
+              onSelect={(selection) => {
+                setRide((prev) => ({ ...prev, to: selection.description }));
+                setToSelection(selection);
+                resetRouteEstimates();
+              }}
+              placeholder={t.toPlaceholder}
+              className="mt-1"
+            />
           </motion.div>
         </div>
+
+        {/* Stops Section - Only show after from/to are filled */}
+        {ride.from && ride.to && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.15 }}
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <label className="label">{t.stops}</label>
+              <div className="relative group">
+                <button type="button" className="text-sm font-semibold rounded-full w-5 h-5 flex items-center justify-center border border-shade-300 bg-shade-100 text-shade-600">i</button>
+                <div className="absolute left-6 top-1/2 -translate-y-1/2 w-56 p-2 bg-white border border-shade-200 text-sm text-neutral-700 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition">
+                  {locale === "fi" ? "Lisää pysähdyspaikat, joista matkustajat voivat nousta kyytiin." : locale === "sv" ? "Lägg till stopp där passagerare kan kliva in." : "Add stops where passengers can board."}
+                </div>
+              </div>
+            </div>
+            
+            {stops.length === 0 && (
+              <div className="rounded-xl border border-dashed border-shade-200 bg-white/60 px-4 py-5 text-sm text-neutral-600">
+                {locale === "fi"
+                  ? "Lisää ensimmäinen pysähdyspaikka – voit määrittää kaupungin ja pysähdyshinnan."
+                  : locale === "sv"
+                    ? "Lägg till det första stoppet – ange stad och pris för hållplatsen."
+                    : "Add your first stop – specify the city and an optional price for the pickup."}
+              </div>
+            )}
+
+            {stops.map((stop, index) => (
+              <div
+                key={`stop-${index}`}
+                className="relative mb-4 rounded-xl border border-shade-200 bg-white/90 p-4 shadow-sm"
+              >
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-semibold text-shade-600">
+                    {t.stopLabel.replace("{number}", String(index + 1))}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveStop(index)}
+                    className="inline-flex items-center gap-1 rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-600 transition hover:bg-red-100"
+                  >
+                    <span aria-hidden>×</span>
+                    {t.removeStop}
+                  </button>
+                </div>
+                <div className="grid gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,140px)]">
+                <StopLocationInput
+                  value={stop.city}
+                  onChange={(value) => handleStopChange(index, "city", value)}
+                  onSelect={(selection) => handleStopSelect(index, selection)}
+                  placeholder={t.stopCity}
+                />
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={stop.price}
+                      onChange={(e) => handleStopChange(index, "price", e.target.value)}
+                      placeholder={t.stopPrice}
+                      className="input pr-10"
+                      min="0"
+                      step="0.1"
+                    />
+                    <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-neutral-500">€</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            <button
+              type="button"
+              onClick={handleAddStop}
+              className="mt-4 inline-flex items-center gap-2 rounded-full border border-shade-300 bg-white px-4 py-2 text-sm font-semibold text-shade-600 transition hover:bg-shade-100"
+            >
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-shade-500 text-white">+</span>
+              {t.addStop}
+            </button>
+          </motion.div>
+        )}
 
         {/* Google Maps Component - Shows below from/to fields */}
         {ride.from && ride.to && (
@@ -478,7 +674,14 @@ export default function NewRide() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.1 }}
           >
-            <GoogleMapRide onRouteSelected={handleRouteSelected} />
+            <GoogleMapRide
+              onRouteSelected={handleRouteSelected}
+              from={ride.from}
+              to={ride.to}
+              fromPlace={fromSelection}
+              toPlace={toSelection}
+              stops={stops}
+            />
           </motion.div>
         )}
 
@@ -588,9 +791,18 @@ export default function NewRide() {
             value={ride.price}
             onChange={handleChange}
             min="0"
+            step="0.01"
+            max={maxPrice ?? undefined}
+            aria-invalid={isPriceOverLimit}
             className="input mt-1"
             required
           />
+          {priceLimitInfo && (
+            <p className="mt-1 text-xs text-neutral-500">{priceLimitInfo}</p>
+          )}
+          {priceLimitExceededMessage && (
+            <p className="mt-1 text-xs text-red-600">{priceLimitExceededMessage}</p>
+          )}
           <button
             type="button"
             onClick={() => setShowDiscount(!showDiscount)}
@@ -779,9 +991,15 @@ export default function NewRide() {
 
         <motion.button
           type="submit"
-          className="w-full mt-6 bg-shade-500 hover:bg-shade-600 text-white py-3 rounded-xl font-semibold shadow-md transition"
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.97 }}
+          disabled={isSubmitDisabled}
+          aria-disabled={isSubmitDisabled}
+          className={`w-full mt-6 text-white py-3 rounded-xl font-semibold shadow-md transition ${
+            isSubmitDisabled
+              ? "bg-shade-400 cursor-not-allowed opacity-60"
+              : "bg-shade-500 hover:bg-shade-600"
+          }`}
+          whileHover={isSubmitDisabled ? undefined : { scale: 1.05 }}
+          whileTap={isSubmitDisabled ? undefined : { scale: 0.97 }}
         >
           {t.addRide}
         </motion.button>

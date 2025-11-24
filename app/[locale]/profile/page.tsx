@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { supabase } from "@/lib/supabase";
@@ -31,6 +32,10 @@ const translations = {
     loading: "Ladataan profiilia...",
     signInRequired: "Kirjaudu sisään nähdäksesi profiilisi.",
     driver: "Kuski",
+    statusPending: "Odottaa vahvistusta",
+    statusAccepted: "Hyväksytty",
+    statusRejected: "Hylätty",
+    manageBookings: "Hallinnoi varauksia",
   },
   en: {
     title: "My Profile",
@@ -56,6 +61,10 @@ const translations = {
     loading: "Loading profile...",
     signInRequired: "Sign in to view your profile.",
     driver: "Driver",
+    statusPending: "Awaiting confirmation",
+    statusAccepted: "Accepted",
+    statusRejected: "Rejected",
+    manageBookings: "Manage bookings",
   },
   sv: {
     title: "Min Profil",
@@ -81,6 +90,10 @@ const translations = {
     loading: "Laddar profil...",
     signInRequired: "Logga in för att se din profil.",
     driver: "Förare",
+    statusPending: "Väntar på svar",
+    statusAccepted: "Accepterad",
+    statusRejected: "Avslagen",
+    manageBookings: "Hantera bokningar",
   },
 };
 
@@ -120,6 +133,45 @@ export default function ProfilePage() {
   const [profilePicture, setProfilePicture] = useState<string | null>(null);
   const [isUploadingPicture, setIsUploadingPicture] = useState(false);
   const [showProfilePictureModal, setShowProfilePictureModal] = useState(false);
+
+  const bookingStatusBadges: Record<string, { label: string; className: string }> = {
+    pending: {
+      label: t.statusPending,
+      className: "bg-amber-100/80 text-amber-800 border border-amber-200",
+    },
+    accepted: {
+      label: t.statusAccepted,
+      className: "bg-emerald-100/80 text-emerald-700 border border-emerald-200",
+    },
+    rejected: {
+      label: t.statusRejected,
+      className: "bg-rose-100/80 text-rose-700 border border-rose-200",
+    },
+  };
+
+  const formatBookingDate = (value?: string | null) => {
+    if (!value) {
+      return "";
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return "";
+    }
+    return date.toLocaleDateString(locale);
+  };
+
+  const formatRideDateTime = (value?: string | null) => {
+    if (!value) {
+      return "";
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return "";
+    }
+    const separator = locale === "fi" ? "klo " : locale === "sv" ? "kl. " : "at ";
+    const time = date.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+    return `${date.toLocaleDateString(locale)} ${separator}${time}`;
+  };
 
   // Hae käyttäjän tiedot ja kyydit Supabasen kautta
   useEffect(() => {
@@ -549,7 +601,15 @@ export default function ProfilePage() {
         </section>
 
         <section className="mt-10">
-          <h2 className="text-xl font-semibold text-emerald-700 mb-4">{t.bookedRides}</h2>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+            <h2 className="text-xl font-semibold text-emerald-700">{t.bookedRides}</h2>
+            <Link
+              href={`/${locale}/bookings`}
+              className="inline-flex items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 transition"
+            >
+              {t.manageBookings}
+            </Link>
+          </div>
           {bookings.length === 0 ? (
             <p className="text-neutral-600">{t.noBookedRides}</p>
           ) : (
@@ -562,15 +622,23 @@ export default function ProfilePage() {
                   transition={{ duration: 0.3 }}
                   className="p-4 border border-emerald-100 rounded-xl shadow-sm"
                 >
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <span
+                      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
+                        bookingStatusBadges[b.status]?.className ?? bookingStatusBadges.pending.className
+                      }`}
+                    >
+                      {bookingStatusBadges[b.status]?.label ?? bookingStatusBadges.pending.label}
+                    </span>
+                    <p className="text-xs text-neutral-500">
+                      {formatBookingDate(b.created_at)}
+                    </p>
+                  </div>
                   <p className="font-semibold text-emerald-700">
                     {b.ride?.from_city} → {b.ride?.to_city}
                   </p>
                   <p className="text-sm text-neutral-600">
-                    {new Date(b.ride?.departure).toLocaleDateString("fi-FI")} klo{" "}
-                    {new Date(b.ride?.departure).toLocaleTimeString("fi-FI", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
+                    {formatRideDateTime(b.ride?.departure)}
                   </p>
                   <p className="text-sm text-neutral-600">
                     {t.driver}: {b.ride?.driver_name || "Unknown"}

@@ -4,6 +4,7 @@ import { getToken } from "next-auth/jwt";
 import { createClient } from "@supabase/supabase-js";
 
 const prisma = new PrismaClient();
+const TOTAL_MAX_RATE_PER_KM = 0.15;
 
 // --- HAE KYYDIT ---
 export async function GET() {
@@ -38,7 +39,43 @@ export async function POST(req: Request) {
     console.log("POST body:", body);
     console.log("Token user:", token);
 
-    const { from, to, date, time, price, seats, car, options, info } = body;
+    const {
+      from,
+      to,
+      date,
+      time,
+      price,
+      seats,
+      car,
+      options,
+      info,
+      distanceMeters,
+    } = body;
+
+    const parsedSeats = Number.parseInt(seats, 10) || 1;
+    const parsedPrice = Number.parseFloat(price);
+    if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+      return NextResponse.json({ error: "Invalid price provided" }, { status: 400 });
+    }
+    const parsedDistanceMeters = typeof distanceMeters === "number"
+      ? distanceMeters
+      : distanceMeters !== undefined
+        ? Number(distanceMeters)
+        : null;
+
+    if (parsedDistanceMeters !== null && Number.isFinite(parsedDistanceMeters) && parsedDistanceMeters > 0) {
+      const distanceKm = parsedDistanceMeters / 1000;
+      const priceLimit = (distanceKm * TOTAL_MAX_RATE_PER_KM) / Math.max(parsedSeats, 1);
+      if (Number.isFinite(priceLimit) && priceLimit >= 0 && parsedPrice > priceLimit + 1e-2) {
+        return NextResponse.json(
+          {
+            error: "Price exceeds the allowed ceiling",
+            maxPricePerPassenger: Number(priceLimit.toFixed(2)),
+          },
+          { status: 400 }
+        );
+      }
+    }
 
     const user = await prisma.user.findUnique({
       where: { email: token.email },
@@ -55,8 +92,8 @@ export async function POST(req: Request) {
         to,
         date,
         time,
-        price: parseFloat(price),
-        seats: parseInt(seats) || 1,
+  price: parsedPrice,
+  seats: parsedSeats,
         car: car || "Tuntematon",
         options: JSON.stringify(options || []),
         info: info || "",

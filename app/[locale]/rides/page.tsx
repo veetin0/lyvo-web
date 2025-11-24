@@ -2,10 +2,10 @@
 
 import { useState, useMemo, useEffect, ChangeEvent } from "react";
 import AlertBox from "@/components/AlertBox";
-import { motion } from "framer-motion";
+import { RideMiniMap } from "@/components/RideMiniMap";
+import { motion, AnimatePresence } from "framer-motion";
 import { useRouter, usePathname } from "next/navigation";
-import { AnimatePresence } from "framer-motion";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, X } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 import { useSession } from "next-auth/react";
 
@@ -42,6 +42,19 @@ const translations = {
     bookedLabel: "Varattu",
     signInToBook: "Kirjaudu sisään varataksesi kyytejä",
     carNotSpecified: "Autoa ei ilmoitettu",
+    detailsTitle: "Kyydin tiedot",
+    distanceLabel: "Matka",
+    durationLabel: "Kesto",
+    stopsLabel: "Pysähdykset",
+    noStops: "Ei pysähdyksiä",
+    close: "Sulje",
+    routePreview: "Reitin esikatselu",
+    noRoutePreview: "Reittitietoja ei saatavilla",
+    noRatings: "Ei arvosteluja",
+    bookingInProgress: "Varataan...",
+    bookingConfirmed: (from: string, to: string) => `Varaus vahvistettu: ${from} → ${to}!`,
+    bookingFailed: "Varauksen tekeminen epäonnistui. Yritä uudelleen.",
+    ridesLoadFailed: "Kyytien hakeminen epäonnistui. Yritä hetken kuluttua uudelleen.",
   },
   en: {
     title: "Find a Ride",
@@ -75,6 +88,19 @@ const translations = {
     bookedLabel: "Booked",
     signInToBook: "Please sign in to book rides",
     carNotSpecified: "No car specified",
+    detailsTitle: "Ride details",
+    distanceLabel: "Distance",
+    durationLabel: "Duration",
+    stopsLabel: "Stops",
+    noStops: "No stops",
+    close: "Close",
+    routePreview: "Route preview",
+    noRoutePreview: "Route data unavailable",
+    noRatings: "No ratings",
+    bookingInProgress: "Booking...",
+    bookingConfirmed: (from: string, to: string) => `Booking confirmed: ${from} → ${to}!`,
+    bookingFailed: "Booking failed. Please try again.",
+    ridesLoadFailed: "Failed to load rides. Please try again shortly.",
   },
   sv: {
     title: "Hitta skjuts",
@@ -108,6 +134,19 @@ const translations = {
     bookedLabel: "Bokad",
     signInToBook: "Logga in för att boka skjutsar",
     carNotSpecified: "Ingen bil angiven",
+    detailsTitle: "Skjutsdetaljer",
+    distanceLabel: "Sträcka",
+    durationLabel: "Varaktighet",
+    stopsLabel: "Stopp",
+    noStops: "Inga stopp",
+    close: "Stäng",
+    routePreview: "Rutöversikt",
+    noRoutePreview: "Ingen ruttinformation tillgänglig",
+    noRatings: "Inga betyg",
+    bookingInProgress: "Bokar...",
+    bookingConfirmed: (from: string, to: string) => `Bokning bekräftad: ${from} → ${to}!`,
+    bookingFailed: "Bokningen misslyckades. Försök igen.",
+    ridesLoadFailed: "Det gick inte att hämta skjutsar. Försök igen senare.",
   },
 };
 
@@ -127,12 +166,86 @@ interface Ride {
   seats: number | null;
   owner: string;
   profilePicture?: string | null;
+  distanceMeters?: number | null;
+  durationSeconds?: number | null;
+  routePolyline?: string | null;
+  stops?: Array<{ city?: string; price?: string }> | null;
 }
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
+
+const optionLabelMap: Record<string, { fi: string; en: string; sv: string }> = {
+  electric: { fi: "Sähköauto", en: "Electric car", sv: "Elbil" },
+  van: { fi: "Tila-auto", en: "Van", sv: "Skåpbil" },
+  pets: { fi: "Lemmikit sallittu", en: "Pets allowed", sv: "Husdjur tillåtna" },
+  quiet: { fi: "Hiljainen kyyti", en: "Quiet ride", sv: "Tyst skjuts" },
+  music: { fi: "Musiikkia kyydissä", en: "Music during ride", sv: "Musik under skjutsen" },
+  ac: { fi: "Ilmastointi", en: "Air conditioning", sv: "Luftkonditionering" },
+  talkative: { fi: "Puhelias kuski", en: "Chatty driver", sv: "Pratglad förare" },
+  smokeFree: { fi: "Savuton kyyti", en: "Smoke-free", sv: "Rökfri skjuts" },
+  wifi: { fi: "WiFi käytössä", en: "WiFi available", sv: "WiFi tillgängligt" },
+  charging: { fi: "Latausmahdollisuus", en: "Phone charging", sv: "Laddningsalternativ" },
+  bikeSpot: { fi: "Polkupyörän kuljetus mahdollista", en: "Bike transportation", sv: "Cykeltransport möjlig" },
+  pickUp: { fi: "Nouto sovittavissa", en: "Pickup available", sv: "Hämtning möjlig" },
+  restStop: { fi: "Taukopysähdyksiä matkalla", en: "Rest stops on route", sv: "Raststopp längs vägen" },
+  startTime: { fi: "Joustava lähtöaika", en: "Flexible departure", sv: "Flexibel avgångstid" },
+  bag: { fi: "Tilaa laukuille", en: "Large luggage space", sv: "Utrymme för bagage" },
+  rentCar: { fi: "Vuokra- tai yhteisauto", en: "Rental/shared car", sv: "Hyr-/delad bil" },
+  femaleDriver: { fi: "Naiskuljettaja", en: "Female driver", sv: "Kvinnlig förare" },
+  popular: { fi: "Suosittu kyyti", en: "Popular ride", sv: "Populär skjuts" },
+};
+
+const getOptionLabel = (option: string, locale: keyof typeof translations): string => {
+  return optionLabelMap[option]?.[locale] ?? option;
+};
+
+const formatDistance = (meters?: number | null): string | null => {
+  if (!Number.isFinite(meters ?? NaN) || !meters || meters <= 0) {
+    return null;
+  }
+  const km = meters / 1000;
+  if (km >= 100) {
+    return `${Math.round(km)} km`;
+  }
+  return `${km.toFixed(1)} km`;
+};
+
+const formatDuration = (seconds?: number | null): string | null => {
+  if (!Number.isFinite(seconds ?? NaN) || !seconds || seconds <= 0) {
+    return null;
+  }
+  const totalMinutes = Math.round(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0) {
+    return minutes > 0 ? `${hours} h ${minutes} min` : `${hours} h`;
+  }
+  return `${minutes} min`;
+};
+
+const normalizeStops = (stops: unknown): Array<{ city?: string; price?: string }> => {
+  if (!stops) {
+    return [];
+  }
+  if (Array.isArray(stops)) {
+    return stops as Array<{ city?: string; price?: string }>;
+  }
+  if (typeof stops === "string") {
+    try {
+      const parsed = JSON.parse(stops);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  if (typeof stops === "object") {
+    return [];
+  }
+  return [];
+};
 
 export default function EtsiKyyti() {
   const pathname = usePathname();
@@ -158,7 +271,117 @@ export default function EtsiKyyti() {
   const router = useRouter();
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
+  const [alertType, setAlertType] = useState<"success" | "error">("success");
   const [profilePictures, setProfilePictures] = useState<Record<string, string | null>>({});
+  const [selectedRide, setSelectedRide] = useState<Ride | null>(null);
+  const [bookingRideId, setBookingRideId] = useState<string | null>(null);
+  const closeRideDetails = () => setSelectedRide(null);
+
+  const confirmBooking = async (payload: { rideId: string }) => {
+    // Hook for future payment flow: integrate Stripe checkout before confirming the booking.
+    const response = await fetch("/api/bookings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error("Booking request failed");
+    }
+  };
+
+  const handleBookRide = async (ride: Ride) => {
+    if (bookingRideId) {
+      return;
+    }
+
+    if (bookedRides[ride.id]) {
+      return;
+    }
+
+    if (!session?.user) {
+      setShowLoginPrompt(true);
+      return;
+    }
+
+    if (typeof ride.seats === "number" && ride.seats <= 0) {
+      setAlertType("error");
+      setAlertMessage(t.fullRide);
+      setTimeout(() => setAlertMessage(null), 3000);
+      return;
+    }
+
+    const initialSeats = typeof ride.seats === "number" ? ride.seats : null;
+
+    try {
+      setBookingRideId(ride.id);
+
+      if (initialSeats !== null) {
+        setRides((prevRides) =>
+          prevRides.map((r) =>
+            r.id === ride.id
+              ? {
+                  ...r,
+                  seats: Math.max(
+                    (typeof r.seats === "number" ? r.seats : initialSeats) - 1,
+                    0
+                  ),
+                }
+              : r
+          )
+        );
+
+        setSelectedRide((current) =>
+          current?.id === ride.id
+            ? {
+                ...current,
+                seats: Math.max(
+                  (typeof current.seats === "number" ? current.seats : initialSeats) - 1,
+                  0
+                ),
+              }
+            : current
+        );
+      }
+
+      await confirmBooking({ rideId: ride.id });
+
+      setBookedRides((prev) => ({ ...prev, [ride.id]: true }));
+      setAlertType("success");
+      setAlertMessage(t.bookingConfirmed(ride.from, ride.to));
+      setTimeout(() => setAlertMessage(null), 3000);
+    } catch (error) {
+      console.error("Failed to book ride:", error);
+
+      if (initialSeats !== null) {
+        setRides((prevRides) =>
+          prevRides.map((r) =>
+            r.id === ride.id
+              ? {
+                  ...r,
+                  seats: initialSeats,
+                }
+              : r
+          )
+        );
+
+        setSelectedRide((current) =>
+          current?.id === ride.id
+            ? {
+                ...current,
+                seats: initialSeats,
+              }
+            : current
+        );
+      }
+
+      setAlertType("error");
+      setAlertMessage(t.bookingFailed);
+      setTimeout(() => setAlertMessage(null), 3000);
+    } finally {
+      setBookingRideId(null);
+    }
+  };
 
   useEffect(() => {
     const fetchRides = async () => {
@@ -169,27 +392,55 @@ export default function EtsiKyyti() {
           .order("created_at", { ascending: false });
         if (error) throw error;
 
-        const formatted = data.map((r: any) => ({
-          id: r.id,
-          from: r.from_city,
-          to: r.to_city,
-          date: new Date(r.departure).toLocaleDateString("fi-FI"),
-          time: new Date(r.departure).toLocaleTimeString("fi-FI", { hour: "2-digit", minute: "2-digit" }),
-          price: r.price_eur,
-          car: r.car || t.carNotSpecified,
-          driver: {
-            name: r.driver_name
-              ? (() => {
-                  const [first, last] = r.driver_name.split(" ");
-                  return last ? `${first} ${last[0]}.` : first;
-                })()
-              : "Tuntematon",
-            rating: r.driver_rating ?? 0,
-          },
-          options: r.options || [],
-          seats: r.seats ?? null,
-          owner: r.owner,
-        }));
+        const formatted = data.map((r: any) => {
+          const departureDate = new Date(r.departure);
+          const stops = normalizeStops(r.stops);
+
+          return {
+            id: r.id,
+            from: r.from_city,
+            to: r.to_city,
+            date: departureDate.toLocaleDateString("fi-FI"),
+            time: departureDate.toLocaleTimeString("fi-FI", { hour: "2-digit", minute: "2-digit" }),
+            price: r.price_eur,
+            car: r.car || t.carNotSpecified,
+            driver: {
+              name: r.driver_name
+                ? (() => {
+                    const [first, last] = r.driver_name.split(" ");
+                    return last ? `${first} ${last[0]}.` : first;
+                  })()
+                : "Tuntematon",
+              rating: r.driver_rating ?? 0,
+            },
+            options: Array.isArray(r.options)
+              ? r.options
+              : typeof r.options === "string"
+                ? (() => {
+                    try {
+                      const parsed = JSON.parse(r.options);
+                      return Array.isArray(parsed) ? parsed : [];
+                    } catch {
+                      return [];
+                    }
+                  })()
+                : r.options || [],
+            seats: r.seats ?? null,
+            owner: r.owner,
+            distanceMeters: typeof r.distance_meters === "number"
+              ? r.distance_meters
+              : r.distance_meters !== null && r.distance_meters !== undefined
+                ? Number(r.distance_meters)
+                : null,
+            durationSeconds: typeof r.duration_seconds === "number"
+              ? r.duration_seconds
+              : r.duration_seconds !== null && r.duration_seconds !== undefined
+                ? Number(r.duration_seconds)
+                : null,
+            routePolyline: r.route_polyline ?? null,
+            stops,
+          } as Ride;
+        });
 
         // Load profile pictures from localStorage
         const pictures: Record<string, string | null> = {};
@@ -229,7 +480,14 @@ export default function EtsiKyyti() {
           }
         }
       } catch (error) {
-        console.error("Virhe haettaessa kyytejä Supabasesta:", error);
+        const errorMessage =
+          error && typeof error === "object" && "message" in error
+            ? (error as { message?: string }).message
+            : String(error ?? "Unknown error");
+        console.error("Virhe haettaessa kyytejä Supabasesta:", errorMessage);
+        setAlertType("error");
+        setAlertMessage(`${t.ridesLoadFailed}${errorMessage ? ` (${errorMessage})` : ""}`.trim());
+        setTimeout(() => setAlertMessage(null), 4000);
       } finally {
         setLoading(false);
       }
@@ -237,20 +495,56 @@ export default function EtsiKyyti() {
     fetchRides();
   }, [session]);
 
+  useEffect(() => {
+    if (!selectedRide) {
+      return;
+    }
+
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSelectedRide(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleEsc);
+    return () => {
+      window.removeEventListener("keydown", handleEsc);
+    };
+  }, [selectedRide]);
+
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFilters((prev) => ({ ...prev, [name]: value }));
   };
 
   const filteredRides = useMemo(() => {
-    let results = rides.filter(
-      (ride) =>
-        (!filters.from || ride.from.toLowerCase().includes(filters.from.toLowerCase())) &&
-        (!filters.to || ride.to.toLowerCase().includes(filters.to.toLowerCase())) &&
+    const fromTerm = filters.from.trim().toLowerCase();
+    const toTerm = filters.to.trim().toLowerCase();
+
+    let results = rides.filter((ride) => {
+      const stopCities = (ride.stops ?? [])
+        .map((stop) => stop.city?.toLowerCase().trim())
+        .filter((city): city is string => Boolean(city));
+
+      const matchesFrom =
+        !fromTerm ||
+        ride.from.toLowerCase().includes(fromTerm) ||
+        stopCities.some((city) => city.includes(fromTerm));
+
+      const matchesTo =
+        !toTerm ||
+        ride.to.toLowerCase().includes(toTerm) ||
+        stopCities.some((city) => city.includes(toTerm));
+
+      return (
+        matchesFrom &&
+        matchesTo &&
         (!filters.date || ride.date === filters.date) &&
-        (ride.price >= filters.minPrice && ride.price <= filters.maxPrice) &&
+        ride.price >= filters.minPrice &&
+        ride.price <= filters.maxPrice &&
         (filters.minSeats === 0 || (ride.seats && ride.seats >= filters.minSeats))
-    );
+      );
+    });
 
     // Database option values are always in Finnish
     const dbOptions = {
@@ -278,6 +572,16 @@ export default function EtsiKyyti() {
 
     return results;
   }, [filters, rides]);
+
+  const distanceLabel = selectedRide ? formatDistance(selectedRide.distanceMeters) : null;
+  const durationLabel = selectedRide ? formatDuration(selectedRide.durationSeconds) : null;
+  const selectedStops = selectedRide?.stops ?? [];
+  const isSelectedRideBooked = selectedRide ? Boolean(bookedRides[selectedRide.id]) : false;
+  const isSelectedRideOwner = selectedRide ? userRideIds.has(selectedRide.id) : false;
+  const isSelectedRideFull = selectedRide
+    ? typeof selectedRide.seats === "number" && selectedRide.seats <= 0
+    : false;
+  const isSelectedRideBooking = selectedRide ? bookingRideId === selectedRide.id : false;
 
   return (
     <motion.main
@@ -447,26 +751,11 @@ export default function EtsiKyyti() {
         <div className="grid gap-6">
           {filteredRides.length > 0 ? (
             filteredRides.map((ride) => {
-              const optionLabels: Record<string, string> = {
-                electric: "Sähköauto",
-                van: "Tila-auto",
-                pets: "Lemmikit sallittu",
-                quiet: "Hiljainen kyyti",
-                music: "Musiikkia kyydissä",
-                ac: "Ilmastointi",
-                talkative: "Puhelias kuski",
-                smokeFree: "Savuton kyyti",
-                wifi: "WiFi käytössä",
-                charging: "Latausmahdollisuus",
-                bikeSpot: "Polkupyörän kuljetus mahdollista",
-                pickUp: "Nouto sovittavissa",
-                restStop: "Taukopysähdyksiä matkalla",
-                startTime: "Joustava lähtöaika",
-                bag: "Tilaa laukuille",
-                rentCar: "Vuokra- tai yhteisauto",
-                femaleDriver: "Naiskuljettaja",
-                popular: "Suosittu kyyti",
-              };
+              const seatCount = typeof ride.seats === "number" ? ride.seats : null;
+              const isFull = typeof seatCount === "number" && seatCount <= 0;
+              const isRideOwner = userRideIds.has(ride.id);
+              const isRideBooked = Boolean(bookedRides[ride.id]);
+              const isRideBooking = bookingRideId === ride.id;
               return (
                 <motion.div
                   key={ride.id}
@@ -475,7 +764,16 @@ export default function EtsiKyyti() {
                   whileHover={{ scale: 1.02, y: -3 }}
                   whileTap={{ scale: 0.98 }}
                   transition={{ duration: 0.3 }}
-                  className="bg-white border border-emerald-100 rounded-2xl shadow-md hover:shadow-2xl transition-all duration-300 p-5 text-left"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelectedRide(ride)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " " || event.key === "Space" || event.key === "Spacebar") {
+                      event.preventDefault();
+                      setSelectedRide(ride);
+                    }
+                  }}
+                  className="bg-white border border-emerald-100 rounded-2xl shadow-md hover:shadow-2xl transition-all duration-300 p-5 text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-400"
                 >
                   <div className="flex justify-between items-center mb-2">
                     <h3 className="font-semibold text-emerald-800 text-lg">
@@ -486,7 +784,7 @@ export default function EtsiKyyti() {
                   <p className="text-sm text-neutral-600">
                     {ride.date} klo {ride.time}
                   </p>
-                  <p className="text-sm text-neutral-500">{ride.car || "No car specified"}</p>
+                  <p className="text-sm text-neutral-500">{ride.car || t.carNotSpecified}</p>
                   <div className="flex items-center justify-between mt-3">
                     <div className="flex items-center gap-2">
                       {profilePictures[ride.owner] && (
@@ -519,7 +817,7 @@ export default function EtsiKyyti() {
                           </span>
                         </>
                       ) : (
-                        <span className="text-neutral-500 text-xs italic">No ratings</span>
+                        <span className="text-neutral-500 text-xs italic">{t.noRatings}</span>
                       )}
                     </div>
                   </div>
@@ -535,76 +833,47 @@ export default function EtsiKyyti() {
                   <div className="flex flex-wrap gap-2 mt-2">
                     {ride.options.map((opt) => (
                       <span key={opt} className="px-2 py-1 bg-emerald-50 text-emerald-700 text-xs rounded-lg border border-emerald-200">
-                        {optionLabels[opt] || opt}
+                        {getOptionLabel(opt, locale)}
                       </span>
                     ))}
                   </div>
-                  {ride.seats === 0 ? (
+                  {isFull ? (
                     <button
+                      onClick={(event) => event.stopPropagation()}
                       disabled
                       className="mt-4 w-full px-4 py-2 rounded-xl font-semibold bg-gray-100 text-gray-500 border border-gray-300 cursor-not-allowed"
                     >
-                      Full ride
+                      {t.fullRide}
                     </button>
-                  ) : userRideIds.has(ride.id) ? (
+                  ) : isRideOwner ? (
                     <button
+                      onClick={(event) => event.stopPropagation()}
                       disabled
                       className="mt-4 w-full px-4 py-2 rounded-xl font-semibold bg-gray-100 text-gray-600 border border-gray-300 cursor-default"
                     >
-                      Your ride
+                      {t.ownRide}
                     </button>
                   ) : (
                     <button
-                      onClick={async () => {
-                        if (bookedRides[ride.id]) return;
-                        if (!session?.user) {
-                          setShowLoginPrompt(true);
-                          return;
-                        }
-
-                        // Jos ei ole paikkoja jäljellä, estetään varaus
-                        if (ride.seats !== null && ride.seats <= 0) {
-                          setAlertMessage("This ride is full");
-                          setTimeout(() => setAlertMessage(null), 3000);
-                          return;
-                        }
-
-                        setBookedRides(prev => ({ ...prev, [ride.id]: true }));
-                        setRides(prevRides =>
-                          prevRides.map(r =>
-                            r.id === ride.id && typeof r.seats === "number"
-                              ? { ...r, seats: r.seats! - 1 }
-                              : r
-                          )
-                        );
-
-                        await fetch("/api/bookings", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ rideId: ride.id }),
-                        });
-
-                        if (typeof ride.seats === "number") {
-                          await supabase
-                            .from("rides")
-                            .update({ seats: ride.seats - 1 })
-                            .eq("id", ride.id);
-                        }
-
-                        setAlertMessage(`Booking confirmed: ${ride.from} → ${ride.to}!`);
-                        setTimeout(() => setAlertMessage(null), 3000);
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handleBookRide(ride);
                       }}
-                      disabled={bookedRides[ride.id]}
+                      disabled={isRideBooked || isRideBooking}
                       className={`mt-4 w-full px-4 py-2 rounded-xl font-semibold transition-all duration-300 ${
-                        bookedRides[ride.id]
+                        isRideBooked
                           ? 'bg-green-100 text-green-700 border border-green-300 cursor-default'
-                          : 'bg-emerald-500 text-white hover:bg-emerald-600 hover:scale-[1.02]'
+                          : isRideBooking
+                            ? 'bg-emerald-400 text-white border border-emerald-500 cursor-wait'
+                            : 'bg-emerald-500 text-white hover:bg-emerald-600 hover:scale-[1.02]'
                       }`}
                     >
-                      {bookedRides[ride.id] ? (
+                      {isRideBooked ? (
                         <span className="inline-flex items-center gap-1">
                           <CheckCircle2 size={18} /> {t.bookedLabel}
                         </span>
+                      ) : isRideBooking ? (
+                        t.bookingInProgress
                       ) : (
                         t.bookRide
                       )}
@@ -614,17 +883,227 @@ export default function EtsiKyyti() {
               );
             })
           ) : (
-            <p className="text-neutral-500">No rides found</p>
+            <p className="text-neutral-500">{t.noRidesFound}</p>
           )}
         </div>
       </div>
       {alertMessage && (
         <AlertBox
           message={alertMessage}
-          type="success"
+          type={alertType}
           onClose={() => setAlertMessage(null)}
         />
       )}
+      <AnimatePresence>
+        {selectedRide && (
+          <motion.div
+            key="ride-details"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
+            onClick={closeRideDetails}
+          >
+            <motion.div
+              initial={{ scale: 0.94, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.94, opacity: 0 }}
+              transition={{ duration: 0.25 }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="ride-details-title"
+              onClick={(event) => event.stopPropagation()}
+              className="relative w-full max-w-2xl bg-white border border-emerald-100 rounded-3xl shadow-2xl p-6 md:p-8 text-left"
+            >
+              <button
+                type="button"
+                onClick={closeRideDetails}
+                aria-label={t.close}
+                className="absolute top-4 right-4 inline-flex h-9 w-9 items-center justify-center rounded-full border border-emerald-100 bg-white text-emerald-600 shadow-sm transition hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              >
+                <X size={18} />
+              </button>
+
+              <div className="flex flex-col gap-4 md:gap-6">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-emerald-500">
+                    {t.detailsTitle}
+                  </p>
+                  <h2
+                    id="ride-details-title"
+                    className="mt-2 text-2xl md:text-3xl font-bold text-emerald-800"
+                  >
+                    {selectedRide.from} → {selectedRide.to}
+                  </h2>
+                  <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-neutral-600">
+                    <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-emerald-700 font-medium border border-emerald-100">
+                      {selectedRide.price} €
+                    </span>
+                    <span>
+                      {selectedRide.date} • {selectedRide.time}
+                    </span>
+                    <span className="text-neutral-500">
+                      {selectedRide.car || t.carNotSpecified}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  {distanceLabel && (
+                    <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                        {t.distanceLabel}
+                      </p>
+                      <p className="text-lg font-bold text-emerald-800">{distanceLabel}</p>
+                    </div>
+                  )}
+                  {durationLabel && (
+                    <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                        {t.durationLabel}
+                      </p>
+                      <p className="text-lg font-bold text-emerald-800">{durationLabel}</p>
+                    </div>
+                  )}
+                  {typeof selectedRide.seats === "number" && (
+                    <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                        {t.reservedSeats}
+                      </p>
+                      <p className="text-lg font-bold text-emerald-800">{selectedRide.seats}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-emerald-100 bg-white px-4 py-4">
+                  <h3 className="text-sm font-semibold text-emerald-700 mb-3 uppercase tracking-wide">
+                    {t.routePreview}
+                  </h3>
+                  {selectedRide.routePolyline ? (
+                    <div className="h-48 w-full overflow-hidden rounded-2xl border border-emerald-100">
+                      <RideMiniMap polyline={selectedRide.routePolyline} className="h-full w-full" />
+                    </div>
+                  ) : (
+                    <p className="text-sm text-neutral-500">{t.noRoutePreview}</p>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-emerald-100 bg-white px-4 py-4">
+                  <h3 className="text-sm font-semibold text-emerald-700 mb-3 uppercase tracking-wide">
+                    {t.stopsLabel}
+                  </h3>
+                  {selectedStops.length ? (
+                    <ul className="space-y-2 text-sm text-neutral-700">
+                      {selectedStops.map((stop, index) => (
+                        <li key={`${stop.city ?? "stop"}-${index}`} className="flex items-center justify-between gap-3 rounded-xl border border-emerald-50 bg-emerald-50/40 px-3 py-2">
+                          <span className="font-medium text-emerald-800">
+                            {stop.city || `${t.stopsLabel} ${index + 1}`}
+                          </span>
+                          {stop.price && (
+                            <span className="text-emerald-600 font-semibold">{stop.price}</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-neutral-500">{t.noStops}</p>
+                  )}
+                </div>
+
+                {selectedRide.options.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-emerald-700 mb-2 uppercase tracking-wide">
+                      {t.filters}
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedRide.options.map((opt) => (
+                        <span
+                          key={opt}
+                          className="px-3 py-1.5 rounded-full border border-emerald-200 bg-emerald-50 text-xs font-semibold text-emerald-700"
+                        >
+                          {getOptionLabel(opt, locale)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-4 rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 md:flex-row md:items-center md:justify-between">
+                  <div className="flex items-center gap-3">
+                    {profilePictures[selectedRide.owner] ? (
+                      <img
+                        src={profilePictures[selectedRide.owner] || ""}
+                        alt={selectedRide.driver?.name}
+                        className="h-12 w-12 rounded-full border border-emerald-200 object-cover"
+                      />
+                    ) : (
+                      <div className="h-12 w-12 rounded-full border border-emerald-200 bg-emerald-100 flex items-center justify-center text-lg font-bold text-emerald-600">
+                        {selectedRide.driver?.name?.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-sm font-semibold text-emerald-800">
+                        {selectedRide.driver?.name}
+                      </p>
+                      {typeof selectedRide.driver?.rating === "number" ? (
+                        <p className="text-xs text-neutral-600">
+                          {selectedRide.driver.rating.toFixed(1)} / 5 ★
+                        </p>
+                      ) : (
+                        <p className="text-xs text-neutral-500 italic">{t.noRatings}</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2 md:flex-row md:items-center">
+                    {isSelectedRideOwner ? (
+                      <span className="inline-flex items-center justify-center rounded-xl border border-emerald-200 bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-700">
+                        {t.ownRide}
+                      </span>
+                    ) : isSelectedRideBooked ? (
+                      <span className="inline-flex items-center gap-1 rounded-xl border border-green-300 bg-green-100 px-4 py-2 text-sm font-semibold text-green-700">
+                        <CheckCircle2 size={16} /> {t.bookedLabel}
+                      </span>
+                    ) : isSelectedRideFull ? (
+                      <span className="inline-flex items-center justify-center rounded-xl border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-600">
+                        {t.fullRide}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (selectedRide) {
+                            void handleBookRide(selectedRide);
+                          }
+                        }}
+                        disabled={isSelectedRideBooking}
+                        className={`inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold text-white shadow focus:outline-none focus:ring-2 focus:ring-emerald-400 ${
+                          isSelectedRideBooking
+                            ? "bg-emerald-400 cursor-wait"
+                            : "bg-emerald-500 hover:bg-emerald-600"
+                        }`}
+                      >
+                        {isSelectedRideBooking ? t.bookingInProgress : t.bookRide}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        closeRideDetails();
+                      }}
+                      className="inline-flex items-center justify-center rounded-xl border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 shadow hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                    >
+                      {t.close}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <AnimatePresence>
         {showLoginPrompt && (
           <motion.div

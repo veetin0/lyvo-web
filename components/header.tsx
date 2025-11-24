@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import AuthButtons from "@/components/AuthButtons";
 
@@ -12,6 +12,7 @@ const translations = {
     about: "Tietoa meistä",
     contact: "Ota yhteyttä",
     profile: "Profiili",
+    bookings: "Varaukset",
     language: "Kieli",
   },
   en: {
@@ -20,6 +21,7 @@ const translations = {
     about: "About",
     contact: "Contact",
     profile: "Profile",
+    bookings: "Bookings",
     language: "Language",
   },
   sv: {
@@ -28,6 +30,7 @@ const translations = {
     about: "Om oss",
     contact: "Kontakta oss",
     profile: "Profil",
+    bookings: "Bokningar",
     language: "Språk",
   },
 };
@@ -40,181 +43,148 @@ export default function Header() {
   const currentLocale = (pathname.split('/')[1] || 'fi') as keyof typeof translations;
   const t = translations[currentLocale] || translations.en;
 
-  // Function to switch language
+  const navItems = useMemo(
+    () => [
+      { href: `/${currentLocale}/rides`, label: t.findRide },
+      { href: `/${currentLocale}/rides/new`, label: t.shareRide },
+      { href: `/${currentLocale}/bookings`, label: t.bookings },
+      { href: `/${currentLocale}/profile`, label: t.profile },
+      { href: `/${currentLocale}/about`, label: t.about },
+      { href: `/${currentLocale}/contact`, label: t.contact },
+    ],
+    [currentLocale, t]
+  );
+
+  const languageOptions = useMemo(
+    () => [
+      { code: "fi", label: "FI" },
+      { code: "en", label: "EN" },
+      { code: "sv", label: "SV" },
+    ],
+    []
+  );
+
   const switchLanguage = (newLocale: string) => {
     const segments = pathname.split('/');
     segments[1] = newLocale;
     return segments.join('/');
   };
 
+  const isActive = (href: string) => {
+    if (href === `/${currentLocale}`) {
+      return pathname === href;
+    }
+    return pathname.startsWith(href);
+  };
+
   return (
-    <header className="fixed inset-x-0 top-0 z-40 bg-white/80 backdrop-blur-md border-b border-emerald-100/60">
-      <div className="max-w-7xl mx-auto flex items-center justify-between py-3 px-4 md:px-6">
-        {/* Logo */}
-        <div className="flex items-center gap-2 md:gap-3">
-          <Link href={`/${currentLocale}`} className="flex items-center group" aria-label="Lyvo home">
+    <header className="fixed inset-x-0 top-0 z-40 border-b border-emerald-100 bg-white/95">
+      <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-6 px-4 py-3 sm:px-6 lg:py-4">
+        <div className="flex items-center gap-4">
+          <Link href={`/${currentLocale}`} className="flex items-center" aria-label="Lyvo home">
             <img
               src="/images/lyvo-logo.png"
               alt="Lyvo logo"
-              className="h-12 md:h-16 w-auto object-contain transition-transform duration-300 hover:scale-105"
+              className="h-11 w-auto object-contain"
             />
           </Link>
-          <p className="text-emerald-700 font-semibold text-sm md:text-lg italic select-none hidden sm:block">
+          <p className="hidden text-sm font-semibold text-emerald-700 sm:block">
             Lift with Lyvo
           </p>
         </div>
 
-        {/* Desktop Navigation */}
-        <nav className="hidden md:flex items-center gap-8 text-[1rem] font-medium text-emerald-700">
-          <Link href={`/${currentLocale}/rides`} className="hover:text-emerald-500 transition-colors">
-            {t.findRide}
-          </Link>
-          <Link href={`/${currentLocale}/rides/new`} className="hover:text-emerald-500 transition-colors">
-            {t.shareRide}
-          </Link>
-          <Link href={`/${currentLocale}/about`} className="hover:text-emerald-500 transition-colors">
-            {t.about}
-          </Link>
-          <Link href={`/${currentLocale}/contact`} className="hover:text-emerald-500 transition-colors">
-            {t.contact}
-          </Link>
-          <Link href={`/${currentLocale}/profile`} className="hover:text-emerald-500 transition-colors">
-            {t.profile}
-          </Link>
-          
-          {/* Language Switcher */}
-          <div className="flex items-center gap-2 border-l border-emerald-200 pl-8">
-            <Link 
-              href={switchLanguage('fi')}
-              className={`px-2 py-1 rounded text-sm font-semibold transition-colors ${
-                currentLocale === 'fi' 
-                  ? 'bg-emerald-500 text-white' 
-                  : 'text-emerald-600 hover:bg-emerald-100'
+        <nav className="hidden items-center gap-2 rounded-full bg-emerald-50/70 px-4 py-2 text-sm font-medium text-emerald-700 md:flex">
+          {navItems.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`rounded-full px-4 py-2 transition-colors ${
+                isActive(item.href)
+                  ? "bg-white text-emerald-700 shadow-sm"
+                  : "hover:bg-emerald-100/80"
               }`}
             >
-              FI
+              {item.label}
             </Link>
-            <Link 
-              href={switchLanguage('en')}
-              className={`px-2 py-1 rounded text-sm font-semibold transition-colors ${
-                currentLocale === 'en' 
-                  ? 'bg-emerald-500 text-white' 
-                  : 'text-emerald-600 hover:bg-emerald-100'
-              }`}
-            >
-              EN
-            </Link>
-            <Link 
-              href={switchLanguage('sv')}
-              className={`px-2 py-1 rounded text-sm font-semibold transition-colors ${
-                currentLocale === 'sv' 
-                  ? 'bg-emerald-500 text-white' 
-                  : 'text-emerald-600 hover:bg-emerald-100'
-              }`}
-            >
-              SV
-            </Link>
-          </div>
-
-          <AuthButtons />
+          ))}
         </nav>
 
-        {/* Mobile Menu Button */}
+        <div className="hidden items-center gap-4 md:flex">
+          <div className="flex items-center gap-2 rounded-full border border-emerald-100 bg-white px-3 py-1.5 text-xs font-semibold">
+            {languageOptions.map((option) => (
+              <Link
+                key={option.code}
+                href={switchLanguage(option.code)}
+                className={`rounded-full px-3 py-1.5 transition-colors ${
+                  currentLocale === option.code
+                    ? "bg-emerald-500 text-white"
+                    : "text-emerald-600 hover:bg-emerald-50"
+                }`}
+              >
+                {option.label}
+              </Link>
+            ))}
+          </div>
+          <AuthButtons />
+        </div>
+
         <button
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="md:hidden p-2 hover:bg-emerald-50 rounded-lg transition-colors"
-          aria-label="Toggle menu"
+          onClick={() => setMobileMenuOpen((prev) => !prev)}
+          className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-emerald-100 text-emerald-700 md:hidden"
+          aria-label="Toggle navigation menu"
         >
-          <svg className="w-6 h-6 text-emerald-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         </button>
       </div>
 
-      {/* Mobile Menu */}
       {mobileMenuOpen && (
-        <div className="md:hidden bg-white border-t border-emerald-100">
-          <nav className="flex flex-col gap-1 p-4">
-            <Link 
-              href={`/${currentLocale}/rides`}
-              className="px-4 py-2 hover:bg-emerald-50 rounded-lg text-emerald-700 font-medium"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              {t.findRide}
-            </Link>
-            <Link 
-              href={`/${currentLocale}/rides/new`}
-              className="px-4 py-2 hover:bg-emerald-50 rounded-lg text-emerald-700 font-medium"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              {t.shareRide}
-            </Link>
-            <Link 
-              href={`/${currentLocale}/about`}
-              className="px-4 py-2 hover:bg-emerald-50 rounded-lg text-emerald-700 font-medium"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              {t.about}
-            </Link>
-            <Link 
-              href={`/${currentLocale}/contact`}
-              className="px-4 py-2 hover:bg-emerald-50 rounded-lg text-emerald-700 font-medium"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              {t.contact}
-            </Link>
-            <Link 
-              href={`/${currentLocale}/profile`}
-              className="px-4 py-2 hover:bg-emerald-50 rounded-lg text-emerald-700 font-medium"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              {t.profile}
-            </Link>
-            
-            {/* Language Switcher Mobile */}
-            <div className="px-4 py-2 border-t border-emerald-100 mt-2">
-              <p className="text-xs font-semibold text-emerald-600 mb-2">{t.language}</p>
-              <div className="flex gap-2">
-                <Link 
-                  href={switchLanguage('fi')}
-                  className={`flex-1 px-2 py-1 rounded text-sm font-semibold text-center transition-colors ${
-                    currentLocale === 'fi' 
-                      ? 'bg-emerald-500 text-white' 
-                      : 'bg-emerald-100 text-emerald-600'
-                  }`}
+        <div className="border-t border-emerald-100 bg-white md:hidden">
+          <div className="space-y-6 px-4 py-6">
+            <nav className="space-y-3">
+              {navItems.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
                   onClick={() => setMobileMenuOpen(false)}
-                >
-                  FI
-                </Link>
-                <Link 
-                  href={switchLanguage('en')}
-                  className={`flex-1 px-2 py-1 rounded text-sm font-semibold text-center transition-colors ${
-                    currentLocale === 'en' 
-                      ? 'bg-emerald-500 text-white' 
-                      : 'bg-emerald-100 text-emerald-600'
+                  className={`block rounded-xl px-4 py-3 text-sm font-semibold transition-colors ${
+                    isActive(item.href)
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "text-emerald-700 hover:bg-emerald-50"
                   }`}
-                  onClick={() => setMobileMenuOpen(false)}
                 >
-                  EN
+                  {item.label}
                 </Link>
-                <Link 
-                  href={switchLanguage('sv')}
-                  className={`flex-1 px-2 py-1 rounded text-sm font-semibold text-center transition-colors ${
-                    currentLocale === 'sv' 
-                      ? 'bg-emerald-500 text-white' 
-                      : 'bg-emerald-100 text-emerald-600'
-                  }`}
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  SV
-                </Link>
+              ))}
+            </nav>
+
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                {t.language}
+              </p>
+              <div className="flex gap-3">
+                {languageOptions.map((option) => (
+                  <Link
+                    key={option.code}
+                    href={switchLanguage(option.code)}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`flex-1 rounded-lg px-3.5 py-2.5 text-center text-sm font-semibold transition-colors ${
+                      currentLocale === option.code
+                        ? "bg-emerald-500 text-white"
+                        : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                    }`}
+                  >
+                    {option.label}
+                  </Link>
+                ))}
               </div>
             </div>
 
-            <div className="px-4 py-2 border-t border-emerald-100 mt-2">
+            <div className="border-t border-emerald-100 pt-4">
               <AuthButtons />
             </div>
-          </nav>
+          </div>
         </div>
       )}
     </header>

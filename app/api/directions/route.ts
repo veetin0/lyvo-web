@@ -8,7 +8,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Lähtö- ja päätepaikka vaaditaan" }, { status: 400 });
     }
 
-    const mapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+    const mapsApiKey =
+      process.env.GOOGLE_MAPS_SERVER_KEY || process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
     if (!mapsApiKey) {
       return NextResponse.json({ error: "Google Maps API key not configured" }, { status: 500 });

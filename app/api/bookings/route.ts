@@ -83,6 +83,10 @@ export async function POST(req: Request): Promise<NextResponse> {
       return NextResponse.json({ error: "Ride not found" }, { status: 404 });
     }
 
+    if (typeof ride.seats !== "number" || ride.seats <= 0) {
+      return NextResponse.json({ error: "Ride is full" }, { status: 400 });
+    }
+
     // We don't need to check if user exists since we have valid JWT token
     // The user email is already verified by NextAuth
     const userEmail = token.email;
@@ -122,13 +126,20 @@ export async function POST(req: Request): Promise<NextResponse> {
     console.log("Booking created:", booking);
 
     // Decrement seats
-    const { error: updateError } = await supabase
+    const { data: updatedRide, error: updateError } = await supabase
       .from("rides")
       .update({ seats: ride.seats - 1 })
-      .eq("id", rideId);
+      .eq("id", rideId)
+      .select("seats")
+      .single();
 
-    if (updateError) {
+    if (updateError || !updatedRide) {
       console.error("Error updating seats:", updateError);
+      const bookingId = Array.isArray(booking) ? booking[0]?.id : (booking as any)?.id;
+      if (bookingId) {
+        await supabase.from("bookings").delete().eq("id", bookingId);
+      }
+      return NextResponse.json({ error: "Unable to reserve seat" }, { status: 500 });
     }
 
     return NextResponse.json({ success: true, booking });

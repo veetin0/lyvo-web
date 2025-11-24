@@ -1,16 +1,126 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
-import { GoogleMap, LoadScript, Marker, DirectionsRenderer } from "@react-google-maps/api";
+import { useState, useEffect } from "react";
+import { GoogleMap, DirectionsRenderer } from "@react-google-maps/api";
+import { loadGoogleMaps } from "./lib/loadGoogleMaps";
+import { PlaceSelection } from "./lib/places";
 
 interface RouteInfo {
   distance: string;
   duration: string;
   polyline: string;
+  distanceMeters: number;
+  durationSeconds: number;
 }
+
+const COUNTRY_LABELS: Record<string, string> = {
+  fi: "Finland",
+  se: "Sweden",
+  no: "Norway",
+  dk: "Denmark",
+  ee: "Estonia",
+  lv: "Latvia",
+  lt: "Lithuania",
+};
+
+const DEFAULT_COUNTRY_BIASES = ["fi", "se", "no"] as const;
+
+const appendCountryHint = (query: string, countryCode: string): string => {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  const lower = trimmed.toLowerCase();
+  const label = COUNTRY_LABELS[countryCode.toLowerCase()] ?? countryCode.toUpperCase();
+
+  if (lower.includes(label.toLowerCase())) {
+    return trimmed;
+  }
+
+  if (trimmed.includes(",")) {
+    return trimmed;
+  }
+
+  return `${trimmed}, ${label}`;
+};
+
+const geocodeAddress = (
+  geocoder: google.maps.Geocoder,
+  address: string,
+  region?: string
+): Promise<google.maps.LatLngLiteral | null> => {
+  return new Promise((resolve) => {
+    if (!address.trim()) {
+      resolve(null);
+      return;
+    }
+
+    geocoder.geocode({ address, region }, (results, status) => {
+      if (status === "OK" && results && results.length > 0) {
+        const location = results[0]?.geometry?.location;
+        if (location) {
+          resolve({ lat: location.lat(), lng: location.lng() });
+          return;
+        }
+      }
+
+      resolve(null);
+    });
+  });
+};
+
+const geocodePlaceId = (
+  geocoder: google.maps.Geocoder,
+  placeId: string
+): Promise<google.maps.LatLngLiteral | null> => {
+  return new Promise((resolve) => {
+    geocoder.geocode({ placeId }, (results, status) => {
+      if (status === "OK" && results && results.length > 0) {
+        const location = results[0]?.geometry?.location;
+        if (location) {
+          resolve({ lat: location.lat(), lng: location.lng() });
+          return;
+        }
+      }
+
+      resolve(null);
+    });
+  });
+};
+
+const formatDistance = (meters: number): string => {
+  if (!Number.isFinite(meters) || meters <= 0) {
+    return "";
+  }
+  if (meters >= 1000) {
+    const km = meters / 1000;
+    return km >= 100 ? `${Math.round(km)} km` : `${km.toFixed(1)} km`;
+  }
+  return `${Math.round(meters)} m`;
+};
+
+const formatDuration = (seconds: number): string => {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return "";
+  }
+  const totalMinutes = Math.round(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0) {
+    return minutes > 0 ? `${hours} h ${minutes} min` : `${hours} h`;
+  }
+  return `${minutes} min`;
+};
 
 interface GoogleMapRideProps {
   onRouteSelected?: (routeInfo: RouteInfo) => void;
+  from?: string;
+  to?: string;
+  fromPlace?: PlaceSelection | null;
+  toPlace?: PlaceSelection | null;
+  stops?: Array<{ place?: PlaceSelection | null; city?: string; price?: string } | null>;
+  countryBiases?: ReadonlyArray<string>;
 }
 
 const mapStyles = [
@@ -88,72 +198,268 @@ const mapStyles = [
   },
 ];
 
-export default function GoogleMapRide({ onRouteSelected }: GoogleMapRideProps) {
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [directions, setDirections] = useState(null);
+export default function GoogleMapRide({
+  onRouteSelected,
+  from = "",
+  to = "",
+  fromPlace = null,
+  toPlace = null,
+  stops = [],
+  countryBiases = DEFAULT_COUNTRY_BIASES,
+}: GoogleMapRideProps) {
+  const [directions, setDirections] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
   const [showNotification, setShowNotification] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState<string>("");
   const [notificationType, setNotificationType] = useState<"success" | "error">("success");
-  const mapRef = useRef(null);
+  const [isScriptReady, setIsScriptReady] = useState<boolean>(
+    typeof window !== "undefined" && !!window.google?.maps
+  );
 
-  const handleFindRoute = async () => {
-    if (!from || !to) {
-      setNotificationType("error");
-      setNotificationMessage("Täytä lähtö- ja päätepaikka");
-      setShowNotification(true);
-      setTimeout(() => setShowNotification(false), 3000);
+  useEffect(() => {
+    loadGoogleMaps()
+      .then(() => {
+        setIsScriptReady(true);
+      })
+      .catch((err) => {
+        console.error("Google Maps script load failed", err);
+        setNotificationType("error");
+        setNotificationMessage("Google Maps -kirjaston lataaminen epäonnistui.");
+        setShowNotification(true);
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!isScriptReady) {
+      setDirections(null);
+      setRouteInfo(null);
+      setLoading(false);
       return;
     }
 
-    setLoading(true);
-
-    try {
-      const response = await fetch("/api/directions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ from, to }),
-      });
-
-      const data = await response.json();
-
-      console.log("Route response:", data);
-
-      if (!response.ok || data.error) {
-        setNotificationType("error");
-        setNotificationMessage(`Reitin haku epäonnistui: ${data.error || "Tuntematon virhe"}`);
-        setShowNotification(true);
-        setTimeout(() => setShowNotification(false), 3000);
-        console.error("Error details:", data);
+    const waypointCandidates: google.maps.DirectionsWaypoint[] = [];
+    (stops ?? []).forEach((stop) => {
+      if (!stop) return;
+      const selection = stop.place ?? null;
+      if (selection?.placeId) {
+        waypointCandidates.push({
+          location: { placeId: selection.placeId } as any,
+          stopover: true,
+        });
         return;
       }
 
-      setDirections(data.directions);
-      setRouteInfo({
-        distance: data.distance,
-        duration: data.duration,
-        polyline: data.polyline,
-      });
-
-      if (onRouteSelected) {
-        onRouteSelected({
-          distance: data.distance,
-          duration: data.duration,
-          polyline: data.polyline,
+      if (selection?.location) {
+        waypointCandidates.push({
+          location: selection.location,
+          stopover: true,
         });
+        return;
       }
-    } catch (error) {
-      console.error("Error finding route:", error);
-      setNotificationType("error");
-      setNotificationMessage(`Virhe reitin haussa: ${error instanceof Error ? error.message : "Tuntematon virhe"}`);
-      setShowNotification(true);
-      setTimeout(() => setShowNotification(false), 3000);
-    } finally {
+
+      // Skip stops without resolvable place information to avoid ambiguous routing
+    });
+    const hasText = (value: string | undefined | null) =>
+      typeof value === "string" && value.trim().length > 0;
+
+    if (!fromPlace && !hasText(from)) {
+      setDirections(null);
+      setRouteInfo(null);
       setLoading(false);
+      return;
     }
-  };
+
+    if (!toPlace && !hasText(to)) {
+      setDirections(null);
+      setRouteInfo(null);
+      setLoading(false);
+      return;
+    }
+
+    let isCancelled = false;
+    const normalizedBiases = (countryBiases || []).filter(Boolean).map((code) => code.toLowerCase());
+    const geocoderAvailable = window.google?.maps?.Geocoder;
+
+    if (!geocoderAvailable) {
+      setDirections(null);
+      setRouteInfo(null);
+      setLoading(false);
+      setNotificationType("error");
+      setNotificationMessage("Geokoodaus ei ole käytettävissä tällä hetkellä.");
+      setShowNotification(true);
+      return;
+    }
+
+    const geocoder = new window.google.maps.Geocoder();
+
+    const resolveWaypoint = async (
+      selection: PlaceSelection | null,
+      fallback: string
+    ): Promise<google.maps.LatLngLiteral | { placeId: string } | null> => {
+      if (selection?.location) {
+        return selection.location;
+      }
+
+      if (selection?.placeId) {
+        const placeResult = await geocodePlaceId(geocoder, selection.placeId);
+        if (placeResult) {
+          return placeResult;
+        }
+
+        return { placeId: selection.placeId };
+      }
+
+      const candidate = (selection?.description ?? fallback ?? "").trim();
+      if (!candidate) {
+        return null;
+      }
+
+      const biasList = normalizedBiases.length ? normalizedBiases : DEFAULT_COUNTRY_BIASES;
+
+      for (const bias of biasList) {
+        const hintedQuery = appendCountryHint(candidate, bias);
+        const result = await geocodeAddress(geocoder, hintedQuery, bias);
+        if (result) {
+          return result;
+        }
+      }
+
+      const fallbackResult = await geocodeAddress(geocoder, candidate);
+      if (fallbackResult) {
+        return fallbackResult;
+      }
+
+      return null;
+    };
+
+    const fetchDirections = async () => {
+      setLoading(true);
+      setShowNotification(false);
+
+      try {
+        const [originResolved, destinationResolved] = await Promise.all([
+          resolveWaypoint(fromPlace, from),
+          resolveWaypoint(toPlace, to),
+        ]);
+
+        if (isCancelled) {
+          return;
+        }
+
+        if (!originResolved || !destinationResolved) {
+          setDirections(null);
+          setRouteInfo(null);
+          setLoading(false);
+          setNotificationType("error");
+          setNotificationMessage("Valitse lähtö- ja määränpää paikkalistasta tai tarkenna osoitteita.");
+          setShowNotification(true);
+          return;
+        }
+
+        const directionsService = new window.google.maps.DirectionsService();
+
+        directionsService.route(
+          {
+            origin: originResolved as any,
+            destination: destinationResolved as any,
+            travelMode: window.google.maps.TravelMode.DRIVING,
+            waypoints: waypointCandidates.length ? waypointCandidates : undefined,
+            optimizeWaypoints: false,
+          },
+          (result: any, status: string) => {
+            if (isCancelled) {
+              return;
+            }
+
+            setLoading(false);
+
+            if (status === "OK" && result?.routes?.length) {
+              const route = result.routes[0];
+              const legs = (route?.legs ?? []) as google.maps.DirectionsLeg[];
+
+              if (!legs.length) {
+                setDirections(null);
+                setRouteInfo(null);
+                setNotificationType("error");
+                setNotificationMessage("Reittiä ei voitu muodostaa valituille sijainneille.");
+                setShowNotification(true);
+                return;
+              }
+
+              let polyline = "";
+              if (window.google?.maps?.geometry?.encoding && route.overview_path) {
+                polyline = window.google.maps.geometry.encoding.encodePath(route.overview_path);
+              }
+
+              const totalDistanceMeters = legs.reduce<number>(
+                (sum, current) => sum + (current.distance?.value ?? 0),
+                0
+              );
+              const totalDurationSeconds = legs.reduce<number>(
+                (sum, current) => sum + (current.duration?.value ?? 0),
+                0
+              );
+
+              const primaryLeg = legs[0];
+              const distanceText = legs.length > 1
+                ? formatDistance(totalDistanceMeters) || primaryLeg?.distance?.text || ""
+                : primaryLeg?.distance?.text || formatDistance(totalDistanceMeters);
+              const durationText = legs.length > 1
+                ? formatDuration(totalDurationSeconds) || primaryLeg?.duration?.text || ""
+                : primaryLeg?.duration?.text || formatDuration(totalDurationSeconds);
+
+              const info: RouteInfo = {
+                distance: distanceText,
+                duration: durationText,
+                polyline,
+                distanceMeters: totalDistanceMeters,
+                durationSeconds: totalDurationSeconds,
+              };
+
+              setDirections(result);
+              setRouteInfo(info);
+              setShowNotification(false);
+
+              if (onRouteSelected) {
+                onRouteSelected(info);
+              }
+            } else {
+              setDirections(null);
+              setRouteInfo(null);
+              setNotificationType("error");
+              if (status === "ZERO_RESULTS") {
+                setNotificationMessage("Reittiä ei löydy valitulla reitillä ja pysähdyspaikoilla.");
+              } else if (status === "NOT_FOUND") {
+                setNotificationMessage("Yksi valituista pysähdyspaikoista tai osoitteista ei löytynyt.");
+              } else {
+                setNotificationMessage(`Reitin haku epäonnistui: ${status}`);
+              }
+              setShowNotification(true);
+            }
+          }
+        );
+      } catch (err) {
+        if (isCancelled) {
+          return;
+        }
+
+        console.error("Directions fetch failed", err);
+        setDirections(null);
+        setRouteInfo(null);
+        setLoading(false);
+        setNotificationType("error");
+        setNotificationMessage("Reitin hakeminen epäonnistui odottamattoman virheen vuoksi.");
+        setShowNotification(true);
+      }
+    };
+
+    fetchDirections();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isScriptReady, from, to, fromPlace, toPlace, stops, onRouteSelected, countryBiases]);
 
   const mapContainerStyle = {
     width: "100%",
@@ -167,6 +473,19 @@ export default function GoogleMapRide({ onRouteSelected }: GoogleMapRideProps) {
     lng: 24.9384,
   };
 
+  const placeholderText = !isScriptReady
+    ? "Ladataan karttaa..."
+    : !from && !to
+      ? "Syötä lähtö- ja määränpää nähdäksesi reitin."
+      : "Reitti päivittyy automaattisesti, kun lähtö- ja määränpäätiedot on valittu.";
+
+  const placeholderNode = (
+    <div className="w-full h-[400px] rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 px-6 text-center">
+      <p className="text-gray-500">{placeholderText}</p>
+      {loading && isScriptReady && <p className="text-sm text-gray-400">Haetaan reittiä...</p>}
+    </div>
+  );
+
   return (
     <div className="space-y-4">
       {/* Notification Modal */}
@@ -176,37 +495,7 @@ export default function GoogleMapRide({ onRouteSelected }: GoogleMapRideProps) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Lähtöpaikka</label>
-          <input
-            type="text"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            placeholder="Esim. Kamppi, Helsinki"
-            className="w-full border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#21a53f] transition-all"
-          />
-        </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Päätepaikka</label>
-          <input
-            type="text"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            placeholder="Esim. Helsinki-Vantaa Airport"
-            className="w-full border border-gray-200 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#21a53f] transition-all"
-          />
-        </div>
-      </div>
-
-      <button
-        onClick={handleFindRoute}
-        disabled={loading}
-        className="w-full bg-[#21a53f] text-white py-2.5 rounded-lg font-semibold hover:bg-[#1d8e37] transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {loading ? "Etsitään reittiä..." : "Etsi reitti"}
-      </button>
 
       {routeInfo && (
         <div className="bg-gradient-to-r from-[#eaf8ec] to-[#f0fdf4] border-l-4 border-[#21a53f] rounded-lg p-4 shadow-sm">
@@ -223,32 +512,23 @@ export default function GoogleMapRide({ onRouteSelected }: GoogleMapRideProps) {
         </div>
       )}
 
-      {directions && (
-        <LoadScript googleMapsApiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!}>
-          <GoogleMap
-            mapContainerStyle={mapContainerStyle}
-            center={defaultCenter}
-            zoom={12}
-            ref={mapRef}
-            options={{
-              styles: mapStyles,
-              disableDefaultUI: false,
-              zoomControl: true,
-              mapTypeControl: false,
-              fullscreenControl: true,
-            }}
-          >
-            <DirectionsRenderer directions={directions} />
-          </GoogleMap>
-        </LoadScript>
-      )}
-
-      {!directions && (from || to) && (
-        <div className="w-full h-[400px] rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center border-2 border-dashed border-gray-300">
-          <p className="text-gray-500 text-center">
-            Paina "Etsi reitti" nähdäksesi kartan ja reitin tiedot
-          </p>
-        </div>
+      {isScriptReady && directions ? (
+        <GoogleMap
+          mapContainerStyle={mapContainerStyle}
+          center={defaultCenter}
+          zoom={12}
+          options={{
+            styles: mapStyles,
+            disableDefaultUI: false,
+            zoomControl: true,
+            mapTypeControl: false,
+            fullscreenControl: true,
+          }}
+        >
+          <DirectionsRenderer directions={directions} />
+        </GoogleMap>
+      ) : (
+        placeholderNode
       )}
     </div>
   );
