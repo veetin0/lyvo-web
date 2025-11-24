@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { createClient } from "@supabase/supabase-js";
 
-export async function PUT(req: Request, { params }: { params: { id: string } }): Promise<NextResponse> {
+type RouteContext = {
+  params: {
+    id: string;
+  };
+};
+
+export async function PUT(req: NextRequest, context: RouteContext): Promise<NextResponse> {
   try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,6 +22,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }):
     }
 
     const { bookingId: bodyBookingId, action } = await req.json();
+    const { params } = context;
     const bookingId = bodyBookingId ?? params.id;
 
     if (!bookingId || !action) {
@@ -83,7 +91,7 @@ export async function PUT(req: Request, { params }: { params: { id: string } }):
   }
 }
 
-export async function DELETE(req: Request, { params }: { params: { id: string } }): Promise<NextResponse> {
+export async function DELETE(req: NextRequest, context: RouteContext): Promise<NextResponse> {
   try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -95,7 +103,7 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const bookingId = params.id;
+    const bookingId = context.params.id;
     if (!bookingId) {
       return NextResponse.json({ error: "Missing booking id" }, { status: 400 });
     }
