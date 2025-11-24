@@ -11,6 +11,7 @@ const supabase = createClient(
 );
 
 const handler = NextAuth({
+  secret: process.env.NEXTAUTH_SECRET,
   providers: [
     CredentialsProvider({
       name: "Credentials",
