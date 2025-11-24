@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo, useEffect, ChangeEvent } from "react";
+import { useState, useMemo, useEffect, ChangeEvent, useRef } from "react";
+import Link from "next/link";
 import AlertBox from "@/components/AlertBox";
 import { RideMiniMap } from "@/components/RideMiniMap";
 import { motion, AnimatePresence } from "framer-motion";
@@ -55,6 +56,8 @@ const translations = {
     bookingConfirmed: (from: string, to: string) => `Varaus vahvistettu: ${from} → ${to}!`,
     bookingFailed: "Varauksen tekeminen epäonnistui. Yritä uudelleen.",
     ridesLoadFailed: "Kyytien hakeminen epäonnistui. Yritä hetken kuluttua uudelleen.",
+    bookingsNav: "Varaukset",
+    profileNav: "Profiili",
   },
   en: {
     title: "Find a Ride",
@@ -101,6 +104,8 @@ const translations = {
     bookingConfirmed: (from: string, to: string) => `Booking confirmed: ${from} → ${to}!`,
     bookingFailed: "Booking failed. Please try again.",
     ridesLoadFailed: "Failed to load rides. Please try again shortly.",
+    bookingsNav: "Bookings",
+    profileNav: "Profile",
   },
   sv: {
     title: "Hitta skjuts",
@@ -147,6 +152,8 @@ const translations = {
     bookingConfirmed: (from: string, to: string) => `Bokning bekräftad: ${from} → ${to}!`,
     bookingFailed: "Bokningen misslyckades. Försök igen.",
     ridesLoadFailed: "Det gick inte att hämta skjutsar. Försök igen senare.",
+    bookingsNav: "Bokningar",
+    profileNav: "Profil",
   },
 };
 
@@ -275,6 +282,7 @@ export default function EtsiKyyti() {
   const [profilePictures, setProfilePictures] = useState<Record<string, string | null>>({});
   const [selectedRide, setSelectedRide] = useState<Ride | null>(null);
   const [bookingRideId, setBookingRideId] = useState<string | null>(null);
+  const filtersAnchorRef = useRef<HTMLDivElement | null>(null);
   const closeRideDetails = () => setSelectedRide(null);
 
   const confirmBooking = async (payload: { rideId: string }) => {
@@ -517,6 +525,16 @@ export default function EtsiKyyti() {
     setFilters((prev) => ({ ...prev, [name]: value }));
   };
 
+  const toggleFilters = () => {
+    setFilters((prev) => ({ ...prev, showFilters: !prev.showFilters }));
+
+    if (!filters.showFilters) {
+      requestAnimationFrame(() => {
+        filtersAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+  };
+
   const filteredRides = useMemo(() => {
     const fromTerm = filters.from.trim().toLowerCase();
     const toTerm = filters.to.trim().toLowerCase();
@@ -588,14 +606,17 @@ export default function EtsiKyyti() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6 }}
-      className="min-h-screen bg-gradient-to-b from-emerald-50 via-white to-emerald-100 py-16 px-4 text-center"
+  className="min-h-screen bg-gradient-to-b from-emerald-50 via-white to-emerald-100 px-4 pt-24 pb-32 text-center md:py-16"
     >
       <div className="max-w-3xl mx-auto">
-        <h1 className="text-4xl font-extrabold bg-gradient-to-r from-emerald-500 to-emerald-700 bg-clip-text text-transparent mb-10">
+  <h1 className="mb-10 bg-gradient-to-r from-emerald-500 to-emerald-700 bg-clip-text text-transparent text-3xl font-extrabold sm:text-4xl">
           {t.title}
         </h1>
 
-        <div className="flex flex-col md:flex-row items-center justify-between mb-6 gap-4 bg-white border border-emerald-100 rounded-xl p-4 shadow-sm">
+        <div
+          ref={filtersAnchorRef}
+          className="mb-6 flex flex-col items-start justify-between gap-4 rounded-2xl border border-emerald-100 bg-white/95 p-4 text-left shadow-sm md:flex-row md:items-center"
+        >
           <div className="flex items-center gap-3">
             <label htmlFor="sort" className="text-emerald-700 font-semibold text-sm">
               {t.sort}:
@@ -1143,6 +1164,35 @@ export default function EtsiKyyti() {
           </motion.div>
         )}
       </AnimatePresence>
+      {!selectedRide && !showLoginPrompt && (
+        <nav className="fixed inset-x-0 bottom-4 z-30 px-4 md:hidden">
+          <div className="mx-auto flex max-w-md items-center justify-between gap-3 rounded-3xl border border-emerald-100 bg-white/95 px-4 py-3 text-sm font-semibold text-emerald-700 shadow-lg shadow-emerald-900/5 backdrop-blur">
+            <button
+              type="button"
+              onClick={toggleFilters}
+              className={`flex-1 rounded-2xl px-3 py-2 transition-colors ${
+                filters.showFilters
+                  ? "bg-emerald-500 text-white"
+                  : "bg-emerald-50 hover:bg-emerald-100"
+              }`}
+            >
+              {filters.showFilters ? t.close : t.filters}
+            </button>
+            <Link
+              href={`/${locale}/bookings`}
+              className="flex-1 rounded-2xl bg-emerald-50 px-3 py-2 text-center transition-colors hover:bg-emerald-100"
+            >
+              {t.bookingsNav}
+            </Link>
+            <Link
+              href={`/${locale}/profile`}
+              className="flex-1 rounded-2xl bg-emerald-50 px-3 py-2 text-center transition-colors hover:bg-emerald-100"
+            >
+              {t.profileNav}
+            </Link>
+          </div>
+        </nav>
+      )}
     </motion.main>
   );
 }
