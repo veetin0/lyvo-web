@@ -282,39 +282,19 @@ export default function ProfilePage() {
         setBookings([]);
       }
 
-      // Fetch pending booking requests for user's rides
+      // Fetch pending booking requests for rides owned by the user through API (uses service role)
       try {
-        const { data: userRides } = await supabase
-          .from("rides")
-          .select("id")
-          .eq("owner", userId ?? "");
-
-        if (userRides && userRides.length > 0) {
-          const rideIds = userRides.map((r: any) => r.id);
-          const { data: pendingBookingsData } = await supabase
-            .from("bookings")
-            .select(`
-              id,
-              user_email,
-              ride_id,
-              status,
-              ride:ride_id (
-                id,
-                from_city,
-                to_city,
-                departure,
-                price_eur,
-                driver_name
-              )
-            `)
-            .eq("status", "pending")
-            .in("ride_id", rideIds);
-
-          console.log("Pending bookings:", pendingBookingsData);
-          setPendingBookings(pendingBookingsData || []);
+        const pendingResponse = await fetch("/api/bookings?view=owner&status=pending");
+        if (pendingResponse.ok) {
+          const pendingData: any[] = await pendingResponse.json();
+          console.log("Pending bookings (owner view):", pendingData);
+          setPendingBookings(pendingData);
+        } else {
+          console.error("Error fetching owner bookings: HTTP", pendingResponse.status);
+          setPendingBookings([]);
         }
       } catch (error: unknown) {
-        console.error("Error fetching pending bookings:", error);
+        console.error("Error fetching owner pending bookings:", error);
         setPendingBookings([]);
       }
 

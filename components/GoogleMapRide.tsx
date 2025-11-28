@@ -5,12 +5,22 @@ import { GoogleMap, DirectionsRenderer } from "@react-google-maps/api";
 import { loadGoogleMaps } from "./lib/loadGoogleMaps";
 import { PlaceSelection } from "./lib/places";
 
+interface RouteLegInfo {
+  distanceMeters: number;
+  durationSeconds: number;
+  distanceText: string;
+  durationText: string;
+  startAddress?: string;
+  endAddress?: string;
+}
+
 interface RouteInfo {
   distance: string;
   duration: string;
   polyline: string;
   distanceMeters: number;
   durationSeconds: number;
+  legs?: RouteLegInfo[];
 }
 
 const COUNTRY_LABELS: Record<string, string> = {
@@ -415,6 +425,21 @@ export default function GoogleMapRide({
                 polyline,
                 distanceMeters: totalDistanceMeters,
                 durationSeconds: totalDurationSeconds,
+                legs: legs.map((leg) => {
+                  const legDistanceValue = leg.distance?.value;
+                  const legDurationValue = leg.duration?.value;
+                  const legDistanceMeters = typeof legDistanceValue === "number" ? legDistanceValue : 0;
+                  const legDurationSeconds = typeof legDurationValue === "number" ? legDurationValue : 0;
+
+                  return {
+                    distanceMeters: legDistanceMeters,
+                    durationSeconds: legDurationSeconds,
+                    distanceText: leg.distance?.text || formatDistance(legDistanceMeters),
+                    durationText: leg.duration?.text || formatDuration(legDurationSeconds),
+                    startAddress: leg.start_address ?? undefined,
+                    endAddress: leg.end_address ?? undefined,
+                  } as RouteLegInfo;
+                }),
               };
 
               setDirections(result);

@@ -5,6 +5,10 @@ import { createClient } from "@supabase/supabase-js";
 // 📌 GET – Hae kirjautuneen käyttäjän varaukset
 export async function GET(req: Request): Promise<NextResponse> {
   try {
+    const { searchParams } = new URL(req.url);
+    const view = searchParams.get("view");
+    const statusFilter = searchParams.get("status");
+
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -12,12 +16,57 @@ export async function GET(req: Request): Promise<NextResponse> {
 
     const token = await getToken({ req: req as any });
     console.log("Token from request:", token);
-    
+
+    if (view === "owner") {
+      if (!token?.id) {
+        console.error("No user id in token for owner view");
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+
+      const ownerStatus = statusFilter ?? "pending";
+      const { data: ownerBookings, error: ownerError } = await supabase
+        .from("bookings")
+        .select(`
+          id,
+          created_at,
+          ride_id,
+          status,
+          user_email,
+          ride:ride_id (
+            id,
+            owner,
+            from_city,
+            to_city,
+            departure,
+            price_eur,
+            driver_name
+          )
+        `)
+        .eq("status", ownerStatus)
+        .eq("ride.owner", token.id);
+
+      if (ownerError) {
+        console.error("Supabase owner bookings error:", ownerError);
+        return NextResponse.json({ error: ownerError.message }, { status: 500 });
+      }
+
+      const sanitized = (ownerBookings || []).map((booking: any) => {
+        if (booking?.ride) {
+          const { owner, ...rideRest } = booking.ride;
+          return { ...booking, ride: rideRest };
+        }
+        return booking;
+      });
+
+      console.log("Owner pending bookings for", token.id, ":", sanitized);
+      return NextResponse.json(sanitized);
+    }
+
     if (!token?.email) {
       console.error("No email in token");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    
+
     const { data: bookings, error } = await supabase
       .from("bookings")
       .select(`

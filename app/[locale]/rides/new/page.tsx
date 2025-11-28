@@ -20,6 +20,15 @@ type RideStop = {
   place?: PlaceSelection | null;
 };
 
+type RouteLegInfo = {
+  distanceMeters: number;
+  durationSeconds: number;
+  distanceText: string;
+  durationText: string;
+  startAddress?: string;
+  endAddress?: string;
+};
+
 const translations = {
   fi: {
     title: "Lisää kyyti",
@@ -46,6 +55,7 @@ const translations = {
     removeStop: "Poista pysähdyspaikka",
     stopCity: "Pysähdyskaupunki",
     stopPrice: "Hinta pysähdyspisteestä (€)",
+  stopPriceSuggestion: "Suositus: {price} €",
     notificationSuccess: "Kyyti lisätty onnistuneesti!",
     notificationError: "Virhe kyytieä lisättäessä",
     loginRequired: "Kirjaudu ensin sisään lisätäksesi kyydin!",
@@ -75,6 +85,7 @@ const translations = {
     removeStop: "Remove Stop",
     stopCity: "Stop City",
     stopPrice: "Price from Stop (€)",
+  stopPriceSuggestion: "Suggested: {price} €",
     notificationSuccess: "Ride added successfully!",
     notificationError: "Error adding ride",
     loginRequired: "Sign in to add a ride!",
@@ -104,6 +115,7 @@ const translations = {
     removeStop: "Ta bort stopp",
     stopCity: "Stoppstad",
     stopPrice: "Pris från stopp (€)",
+  stopPriceSuggestion: "Förslag: {price} €",
     notificationSuccess: "Skjutsen tillagd!",
     notificationError: "Fel vid tilläggning av skjuts",
     loginRequired: "Logga in för att lägga till en skjuts!",
@@ -190,17 +202,27 @@ export default function NewRide() {
   const [duration, setDuration] = useState<string>("");
   const [durationSeconds, setDurationSeconds] = useState<number | null>(null);
   const [routePolyline, setRoutePolyline] = useState<string | null>(null);
+  const [routeLegs, setRouteLegs] = useState<RouteLegInfo[]>([]);
+  const [stopPriceSuggestions, setStopPriceSuggestions] = useState<(number | null)[]>([]);
   const [progress, setProgress] = useState<number>(0);
   const [showNotification, setShowNotification] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState<string>("");
   const [notificationType, setNotificationType] = useState<"success" | "error">("success");
 
-  const handleRouteSelected = (routeInfo: { distance: string; duration: string; polyline: string; distanceMeters: number; durationSeconds: number }) => {
+  const handleRouteSelected = (routeInfo: {
+    distance: string;
+    duration: string;
+    polyline: string;
+    distanceMeters: number;
+    durationSeconds: number;
+    legs?: RouteLegInfo[];
+  }) => {
     setDistance(routeInfo.distance);
     setDuration(routeInfo.duration);
     setDistanceMeters(Number.isFinite(routeInfo.distanceMeters) ? routeInfo.distanceMeters : null);
     setDurationSeconds(Number.isFinite(routeInfo.durationSeconds) ? routeInfo.durationSeconds : null);
     setRoutePolyline(routeInfo.polyline || null);
+    setRouteLegs(routeInfo.legs ?? []);
   };
 
   const resetRouteEstimates = useCallback(() => {
@@ -209,7 +231,9 @@ export default function NewRide() {
     setDistanceMeters(null);
     setDurationSeconds(null);
     setRoutePolyline(null);
-  }, [setDistance, setDuration, setDistanceMeters, setDurationSeconds, setRoutePolyline]);
+    setRouteLegs([]);
+    setStopPriceSuggestions([]);
+  }, [setDistance, setDuration, setDistanceMeters, setDurationSeconds, setRoutePolyline, setRouteLegs, setStopPriceSuggestions]);
 
   const [showDiscount, setShowDiscount] = useState(false);
   const [discountPrice, setDiscountPrice] = useState("");
@@ -420,6 +444,64 @@ export default function NewRide() {
       resetRouteEstimates();
     }
   }, [ride.from, ride.to, resetRouteEstimates]);
+
+  useEffect(() => {
+    if (!stops.length || !routeLegs.length || perPassengerRate <= 0) {
+      setStopPriceSuggestions([]);
+      return;
+    }
+
+    const suggestions = stops.map((_, index) => {
+      const remainingLegs = routeLegs.slice(index + 1);
+      if (!remainingLegs.length) {
+        return null;
+      }
+
+      const distanceMetersRemaining = remainingLegs.reduce(
+        (sum, leg) => sum + (Number.isFinite(leg.distanceMeters) ? leg.distanceMeters : 0),
+        0
+      );
+
+      if (!Number.isFinite(distanceMetersRemaining) || distanceMetersRemaining <= 0) {
+        return null;
+      }
+
+      const distanceKm = distanceMetersRemaining / 1000;
+      const suggested = Math.round(distanceKm * perPassengerRate * 100) / 100;
+
+      if (!Number.isFinite(suggested) || suggested <= 0) {
+        return null;
+      }
+
+      return suggested;
+    });
+
+    setStopPriceSuggestions(suggestions);
+
+    setStops((prev) => {
+      let changed = false;
+
+      const next = prev.map((stop, index) => {
+        const suggestion = suggestions[index];
+
+        if (stop.price && stop.price.trim() !== "") {
+          return stop;
+        }
+
+        if (suggestion === null || suggestion === undefined) {
+          return stop;
+        }
+
+        changed = true;
+        return {
+          ...stop,
+          price: suggestion.toFixed(2),
+        };
+      });
+
+      return changed ? next : prev;
+    });
+  }, [stops, routeLegs, perPassengerRate]);
 
   // Progressbar: laske täyttöaste
   useEffect(() => {
@@ -651,6 +733,11 @@ export default function NewRide() {
                       step="0.1"
                     />
                     <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-neutral-500">€</span>
+                    {stopPriceSuggestions[index] !== null && stopPriceSuggestions[index] !== undefined && (
+                      <p className="mt-1 text-xs text-neutral-500">
+                        {t.stopPriceSuggestion.replace("{price}", stopPriceSuggestions[index]!.toFixed(2))}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>

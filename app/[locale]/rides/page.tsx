@@ -923,7 +923,7 @@ export default function EtsiKyyti() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4"
+            className="fixed inset-0 z-50 flex items-start md:items-center justify-center overflow-y-auto bg-black/40 backdrop-blur-sm px-4 py-6"
             onClick={closeRideDetails}
           >
             <motion.div
@@ -935,7 +935,7 @@ export default function EtsiKyyti() {
               aria-modal="true"
               aria-labelledby="ride-details-title"
               onClick={(event) => event.stopPropagation()}
-              className="relative w-full max-w-2xl bg-white border border-emerald-100 rounded-3xl shadow-2xl p-6 md:p-8 text-left"
+              className="relative w-full max-w-2xl bg-white border border-emerald-100 rounded-3xl shadow-2xl p-6 md:p-8 text-left md:my-6 max-h-full md:max-h-[90vh] overflow-y-auto"
             >
               <button
                 type="button"
@@ -1002,7 +1002,7 @@ export default function EtsiKyyti() {
                     {t.routePreview}
                   </h3>
                   {selectedRide.routePolyline ? (
-                    <div className="h-48 w-full overflow-hidden rounded-2xl border border-emerald-100">
+                    <div className="h-52 w-full overflow-hidden rounded-2xl border border-emerald-100 md:h-64">
                       <RideMiniMap polyline={selectedRide.routePolyline} className="h-full w-full" />
                     </div>
                   ) : (
