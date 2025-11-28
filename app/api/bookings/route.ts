@@ -24,6 +24,21 @@ export async function GET(req: Request): Promise<NextResponse> {
       }
 
       const ownerStatus = statusFilter ?? "pending";
+      const { data: userRides, error: ridesError } = await supabase
+        .from("rides")
+        .select("id")
+        .eq("owner", token.id);
+
+      if (ridesError) {
+        console.error("Error fetching owner rides:", ridesError);
+        return NextResponse.json({ error: ridesError.message }, { status: 500 });
+      }
+
+      const rideIds = (userRides || []).map((ride: any) => ride.id);
+      if (rideIds.length === 0) {
+        return NextResponse.json([]);
+      }
+
       const { data: ownerBookings, error: ownerError } = await supabase
         .from("bookings")
         .select(`
@@ -34,7 +49,6 @@ export async function GET(req: Request): Promise<NextResponse> {
           user_email,
           ride:ride_id (
             id,
-            owner,
             from_city,
             to_city,
             departure,
@@ -43,23 +57,16 @@ export async function GET(req: Request): Promise<NextResponse> {
           )
         `)
         .eq("status", ownerStatus)
-        .eq("ride.owner", token.id);
+        .in("ride_id", rideIds)
+        .order("created_at", { ascending: false });
 
       if (ownerError) {
         console.error("Supabase owner bookings error:", ownerError);
         return NextResponse.json({ error: ownerError.message }, { status: 500 });
       }
 
-      const sanitized = (ownerBookings || []).map((booking: any) => {
-        if (booking?.ride) {
-          const { owner, ...rideRest } = booking.ride;
-          return { ...booking, ride: rideRest };
-        }
-        return booking;
-      });
-
-      console.log("Owner pending bookings for", token.id, ":", sanitized);
-      return NextResponse.json(sanitized);
+      console.log("Owner pending bookings for", token.id, ":", ownerBookings);
+      return NextResponse.json(ownerBookings || []);
     }
 
     if (!token?.email) {
