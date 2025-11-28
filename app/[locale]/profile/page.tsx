@@ -36,6 +36,22 @@ const translations = {
     statusAccepted: "Hyväksytty",
     statusRejected: "Hylätty",
     manageBookings: "Hallinnoi varauksia",
+    bio: "Esittely",
+    noBio: "Et ole vielä kirjoittanut esittelyä.",
+    editBio: "Muokkaa esittelyä",
+    addBio: "Lisää esittely",
+    save: "Tallenna",
+    cancel: "Peruuta",
+    viewProfile: "Katso profiili",
+    riderLabel: "Matkustaja",
+    riderProfileTitle: "Matkustajan profiili",
+    driverRating: "Kuljettajan arvio",
+    ratingUnavailable: "Ei arvioita vielä",
+    bioSaved: "Esittely tallennettu!",
+    profileUpdated: "Profiili päivitetty!",
+    profilePictureError: "Profiilikuvan tallennus epäonnistui.",
+    profileUpdateError: "Profiilin päivitys epäonnistui.",
+    close: "Sulje",
   },
   en: {
     title: "My Profile",
@@ -65,6 +81,22 @@ const translations = {
     statusAccepted: "Accepted",
     statusRejected: "Rejected",
     manageBookings: "Manage bookings",
+    bio: "Bio",
+    noBio: "You haven't written a bio yet.",
+    editBio: "Edit bio",
+    addBio: "Add bio",
+    save: "Save",
+    cancel: "Cancel",
+    viewProfile: "View profile",
+    riderLabel: "Rider",
+    riderProfileTitle: "Rider profile",
+    driverRating: "Driver rating",
+    ratingUnavailable: "No ratings yet",
+    bioSaved: "Bio saved!",
+    profileUpdated: "Profile updated!",
+    profilePictureError: "Saving the profile picture failed.",
+    profileUpdateError: "Updating the profile failed.",
+    close: "Close",
   },
   sv: {
     title: "Min Profil",
@@ -94,6 +126,22 @@ const translations = {
     statusAccepted: "Accepterad",
     statusRejected: "Avslagen",
     manageBookings: "Hantera bokningar",
+    bio: "Presentation",
+    noBio: "Du har inte skrivit någon presentation än.",
+    editBio: "Redigera presentation",
+    addBio: "Lägg till presentation",
+    save: "Spara",
+    cancel: "Avbryt",
+    viewProfile: "Visa profil",
+    riderLabel: "Passagerare",
+    riderProfileTitle: "Passagerarprofil",
+    driverRating: "Föraromdöme",
+    ratingUnavailable: "Inga omdömen ännu",
+    bioSaved: "Presentation sparad!",
+    profileUpdated: "Profil uppdaterad!",
+    profilePictureError: "Misslyckades att spara profilbilden.",
+    profileUpdateError: "Misslyckades att uppdatera profilen.",
+    close: "Stäng",
   },
 };
 
@@ -133,6 +181,11 @@ export default function ProfilePage() {
   const [profilePicture, setProfilePicture] = useState<string | null>(null);
   const [isUploadingPicture, setIsUploadingPicture] = useState(false);
   const [showProfilePictureModal, setShowProfilePictureModal] = useState(false);
+  const [bio, setBio] = useState("");
+  const [isEditingBio, setIsEditingBio] = useState(false);
+  const [bioDraft, setBioDraft] = useState("");
+  const [selectedRiderProfile, setSelectedRiderProfile] = useState<any | null>(null);
+  const [showRiderProfileModal, setShowRiderProfileModal] = useState(false);
 
   const bookingStatusBadges: Record<string, { label: string; className: string }> = {
     pending: {
@@ -197,12 +250,34 @@ export default function ProfilePage() {
         email: (session?.user as any)?.email || "",
       });
 
-      // Load profile picture from localStorage
+      let fallbackPicture: string | null = null;
       if (userId) {
         const savedPicture = localStorage.getItem(`profilePicture_${userId}`);
         if (savedPicture) {
+          fallbackPicture = savedPicture;
           setProfilePicture(savedPicture);
         }
+      }
+
+      try {
+        const profileResponse = await fetch("/api/profile", { cache: "no-store" });
+        if (profileResponse.ok) {
+          const profileData = await profileResponse.json();
+          setBio(typeof profileData.bio === "string" ? profileData.bio : "");
+          if (profileData.profilePictureData) {
+            setProfilePicture(profileData.profilePictureData);
+            if (userId) {
+              localStorage.setItem(`profilePicture_${userId}`, profileData.profilePictureData);
+            }
+          } else if (!profileData.profilePictureData && fallbackPicture) {
+            setProfilePicture(fallbackPicture);
+          }
+        } else {
+          setBio("");
+        }
+      } catch (error) {
+        console.error("Error fetching profile details:", error);
+        setBio("");
       }
 
       let rideRes;
@@ -371,7 +446,6 @@ export default function ProfilePage() {
     if (file.size > 5 * 1024 * 1024) {
       setNotificationType("error");
       setNotificationMessage("Kuvatiedosto on liian suuri. Enimmäiskoko on 5 MB.");
-      setNotificationMessage(null);
       setTimeout(() => setNotificationMessage(null), 3000);
       return;
     }
@@ -388,19 +462,94 @@ export default function ProfilePage() {
 
     // Create a data URL for the image (store locally)
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       const dataUrl = e.target?.result as string;
       setProfilePicture(dataUrl);
       // Store in localStorage
       if (user?.id) {
         localStorage.setItem(`profilePicture_${user.id}`, dataUrl);
       }
-      setIsUploadingPicture(false);
-      setNotificationType("success");
-      setNotificationMessage("Profile picture saved");
-      setTimeout(() => setNotificationMessage(null), 3000);
+      try {
+        const response = await fetch("/api/profile", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ profilePictureData: dataUrl }),
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+          throw new Error(error?.error || "Profile update failed");
+        }
+
+        setNotificationType("success");
+        setNotificationMessage(t.profileUpdated);
+      } catch (error: unknown) {
+        console.error("Error saving profile picture:", error);
+        setNotificationType("error");
+        setNotificationMessage(t.profilePictureError);
+      } finally {
+        setIsUploadingPicture(false);
+        setTimeout(() => setNotificationMessage(null), 3000);
+      }
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleEditBio = () => {
+    setBioDraft(bio);
+    setIsEditingBio(true);
+  };
+
+  const handleCancelBioEdit = () => {
+    setIsEditingBio(false);
+    setBioDraft(bio);
+  };
+
+  const handleSaveBio = async () => {
+    try {
+      const response = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bio: bioDraft }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error?.error || "Profile update failed");
+      }
+
+      setBio(bioDraft);
+      setNotificationType("success");
+      setNotificationMessage(t.bioSaved);
+    } catch (error: unknown) {
+      console.error("Error updating bio:", error);
+      setNotificationType("error");
+      setNotificationMessage(t.profileUpdateError);
+    } finally {
+      setIsEditingBio(false);
+      setTimeout(() => setNotificationMessage(null), 3000);
+    }
+  };
+
+  const openRiderProfileModal = (profile: any, fallbackEmail: string) => {
+    if (profile) {
+      setSelectedRiderProfile(profile);
+    } else {
+      setSelectedRiderProfile({
+        name: fallbackEmail,
+        email: fallbackEmail,
+        bio: "",
+        profilePictureData: null,
+        driverRating: null,
+        driverRatingCount: 0,
+      });
+    }
+    setShowRiderProfileModal(true);
+  };
+
+  const closeRiderProfileModal = () => {
+    setShowRiderProfileModal(false);
+    setSelectedRiderProfile(null);
   };
 
   if (loading) {
@@ -480,8 +629,42 @@ export default function ProfilePage() {
                     onClick={() => setShowProfilePictureModal(false)}
                     className="w-full mt-3 px-4 py-2 border border-neutral-300 text-neutral-700 rounded-lg hover:bg-neutral-50 transition font-medium text-sm"
                   >
-                    Cancel
+                    {t.cancel}
                   </button>
+                </motion.div>
+              </div>
+            )}
+
+            {/* Bio Modal */}
+            {isEditingBio && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.2 }}
+                  className="bg-white rounded-2xl shadow-lg max-w-lg w-full p-6"
+                >
+                  <h3 className="text-lg font-semibold text-emerald-700 mb-4">{t.editBio}</h3>
+                  <textarea
+                    value={bioDraft}
+                    onChange={(event) => setBioDraft(event.target.value)}
+                    className="w-full h-32 border border-neutral-200 rounded-xl p-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                    placeholder={t.bio}
+                  />
+                  <div className="flex flex-col sm:flex-row gap-3 mt-4">
+                    <button
+                      onClick={handleSaveBio}
+                      className="flex-1 px-4 py-2 bg-emerald-500 text-white rounded-lg font-medium hover:bg-emerald-600 transition text-sm"
+                    >
+                      {t.save}
+                    </button>
+                    <button
+                      onClick={handleCancelBioEdit}
+                      className="flex-1 px-4 py-2 border border-neutral-300 text-neutral-700 rounded-lg hover:bg-neutral-50 transition text-sm"
+                    >
+                      {t.cancel}
+                    </button>
+                  </div>
                 </motion.div>
               </div>
             )}
@@ -490,6 +673,20 @@ export default function ProfilePage() {
             <div className="flex-1">
               <p className="mb-3"><strong className="text-emerald-700">{t.name}:</strong> {user.name}</p>
               <p><strong className="text-emerald-700">{t.email}:</strong> {user.email}</p>
+              <div className="mt-5">
+                <h3 className="text-sm font-semibold text-emerald-700 uppercase tracking-wide">{t.bio}</h3>
+                {bio ? (
+                  <p className="mt-2 text-neutral-600 whitespace-pre-line">{bio}</p>
+                ) : (
+                  <p className="mt-2 text-neutral-500 italic">{t.noBio}</p>
+                )}
+                <button
+                  onClick={handleEditBio}
+                  className="mt-3 inline-flex items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100 transition"
+                >
+                  {bio ? t.editBio : t.addBio}
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -553,12 +750,23 @@ export default function ProfilePage() {
                         })}
                       </p>
                       <p className="text-sm text-neutral-600">
-                        Rider: {booking.user_email}
+                        {t.riderLabel}: {booking.rider?.name ?? booking.user_email}
                       </p>
+                      {booking.rider?.driverRating ? (
+                        <p className="text-xs text-neutral-500 mt-1">
+                          {t.driverRating}: {booking.rider.driverRating} ⭐ ({booking.rider.driverRatingCount ?? 0})
+                        </p>
+                      ) : null}
                       <p className="text-sm text-emerald-700 font-medium">
                         {booking.ride?.price_eur} €
                       </p>
                     </div>
+                    <button
+                      onClick={() => openRiderProfileModal(booking.rider, booking.user_email)}
+                      className="text-sm font-medium text-emerald-600 hover:text-emerald-700 hover:underline transition"
+                    >
+                      {t.viewProfile}
+                    </button>
                   </div>
                   <div className="flex gap-2">
                     <button
@@ -634,6 +842,59 @@ export default function ProfilePage() {
           )}
         </section>
       </div>
+
+      {showRiderProfileModal && selectedRiderProfile && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.94 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.2 }}
+            className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6"
+          >
+            <h2 className="text-lg font-semibold text-emerald-700 mb-4 text-center">{t.riderProfileTitle}</h2>
+            <div className="flex flex-col items-center text-center">
+              {selectedRiderProfile.profilePictureData ? (
+                <img
+                  src={selectedRiderProfile.profilePictureData}
+                  alt={selectedRiderProfile.name ?? selectedRiderProfile.email}
+                  className="w-28 h-28 rounded-full object-cover border-4 border-emerald-200 shadow-md"
+                />
+              ) : (
+                <div className="w-28 h-28 rounded-full bg-emerald-100 border-4 border-emerald-200 flex items-center justify-center text-emerald-600 text-4xl font-bold shadow-md">
+                  {(selectedRiderProfile.name || selectedRiderProfile.email || "?")
+                    .charAt(0)
+                    .toUpperCase()}
+                </div>
+              )}
+              <h3 className="mt-4 text-xl font-semibold text-emerald-700">
+                {selectedRiderProfile.name ?? selectedRiderProfile.email}
+              </h3>
+              <p className="text-sm text-neutral-500">{selectedRiderProfile.email}</p>
+              <div className="mt-3">
+                <p className="text-sm font-medium text-neutral-700">
+                  {t.driverRating}:{" "}
+                  {selectedRiderProfile.driverRating
+                    ? `${selectedRiderProfile.driverRating} ⭐ (${selectedRiderProfile.driverRatingCount ?? 0})`
+                    : t.ratingUnavailable}
+                </p>
+              </div>
+              {selectedRiderProfile.bio ? (
+                <p className="mt-4 text-sm text-neutral-600 whitespace-pre-line">
+                  {selectedRiderProfile.bio}
+                </p>
+              ) : (
+                <p className="mt-4 text-sm text-neutral-500 italic">{t.noBio}</p>
+              )}
+            </div>
+            <button
+              onClick={closeRiderProfileModal}
+              className="mt-6 w-full px-4 py-2 bg-emerald-500 text-white rounded-lg font-medium hover:bg-emerald-600 transition text-sm"
+            >
+              {t.close}
+            </button>
+          </motion.div>
+        </div>
+      )}
 
       {notificationMessage && (
         <motion.div

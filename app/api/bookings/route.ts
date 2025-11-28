@@ -65,8 +65,96 @@ export async function GET(req: Request): Promise<NextResponse> {
         return NextResponse.json({ error: ownerError.message }, { status: 500 });
       }
 
-      console.log("Owner pending bookings for", token.id, ":", ownerBookings);
-      return NextResponse.json(ownerBookings || []);
+      const bookingsList = ownerBookings || [];
+      const riderEmails = Array.from(
+        new Set(
+          bookingsList
+            .map((booking: any) => booking?.user_email)
+            .filter((email: any): email is string => typeof email === "string" && email.length > 0)
+        )
+      );
+
+      let riderProfilesByEmail: Record<string, any> = {};
+
+      if (riderEmails.length > 0) {
+        const { data: riderProfiles, error: riderError } = await supabase
+          .from("User")
+          .select("id, name, email, bio, profile_picture_data")
+          .in("email", riderEmails);
+
+        if (riderError) {
+          console.error("Error fetching rider profiles:", riderError);
+        } else if (Array.isArray(riderProfiles)) {
+          riderProfilesByEmail = riderProfiles.reduce((acc: Record<string, any>, profile: any) => {
+            if (profile?.email) {
+              acc[profile.email.toLowerCase()] = {
+                id: profile.id,
+                name: profile.name,
+                email: profile.email,
+                bio: profile.bio ?? "",
+                profilePictureData: profile.profile_picture_data ?? null,
+              };
+            }
+            return acc;
+          }, {});
+
+          const riderIds = riderProfiles
+            .map((profile: any) => profile?.id)
+            .filter((id: any): id is string => typeof id === "string" && id.length > 0);
+
+          if (riderIds.length > 0) {
+            const { data: ratingRows, error: ratingError } = await supabase
+              .from("rides")
+              .select("owner, driver_rating")
+              .in("owner", riderIds)
+              .not("driver_rating", "is", null);
+
+            if (ratingError) {
+              console.error("Error fetching rider ratings:", ratingError);
+            } else if (Array.isArray(ratingRows)) {
+              const ratingAccumulator = new Map<string, { total: number; count: number }>();
+
+              ratingRows.forEach((row: any) => {
+                const ownerId = row?.owner;
+                const ratingValue = row?.driver_rating;
+                if (typeof ownerId === "string" && typeof ratingValue === "number" && ratingValue > 0) {
+                  const current = ratingAccumulator.get(ownerId) ?? { total: 0, count: 0 };
+                  ratingAccumulator.set(ownerId, {
+                    total: current.total + ratingValue,
+                    count: current.count + 1,
+                  });
+                }
+              });
+
+              for (const profile of riderProfiles) {
+                const stats = ratingAccumulator.get(profile.id);
+                if (stats && stats.count > 0) {
+                  const emailKey = profile.email?.toLowerCase();
+                  if (emailKey && riderProfilesByEmail[emailKey]) {
+                    riderProfilesByEmail[emailKey] = {
+                      ...riderProfilesByEmail[emailKey],
+                      driverRating: Number((stats.total / stats.count).toFixed(1)),
+                      driverRatingCount: stats.count,
+                    };
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      const enrichedBookings = bookingsList.map((booking: any) => {
+        const emailKey = booking?.user_email?.toLowerCase();
+        const riderProfile = emailKey ? riderProfilesByEmail[emailKey] ?? null : null;
+        return {
+          ...booking,
+          rider: riderProfile,
+        };
+      });
+
+      console.log("Owner pending bookings for", token.id, ":", enrichedBookings);
+      return NextResponse.json(enrichedBookings);
     }
 
     if (!token?.email) {
