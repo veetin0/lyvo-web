@@ -108,6 +108,10 @@ body {
   body {
     @apply bg-background text-foreground;
   }
+
+  .font-hero {
+    font-family: var(--font-hero), var(--font-sans);
+  }
 }
 /* ========== Animations ========== */
 @keyframes fadeIn {

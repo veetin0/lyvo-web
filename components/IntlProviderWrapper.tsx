@@ -2,11 +2,12 @@
 
 import { ReactNode } from "react";
 import { NextIntlClientProvider } from "next-intl";
+import type { AbstractIntlMessages } from "next-intl";
 import Header from "./header";
 
 interface IntlProviderWrapperProps {
   locale: string;
-  messages: any;
+  messages: AbstractIntlMessages;
   children: ReactNode;
 }
 

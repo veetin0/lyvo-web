@@ -1,14 +1,10 @@
 import NextAuth from "next-auth/next";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
-import bcrypt from "bcryptjs";
-import { createClient } from "@supabase/supabase-js";
 import { v4 as uuidv4 } from "uuid";
+import type { JWT } from "next-auth/jwt";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { authorizeWithSupabase, adminSupabase } from "./authorize";
 
 const handler = NextAuth({
   secret: process.env.NEXTAUTH_SECRET,
@@ -20,35 +16,7 @@ const handler = NextAuth({
         password: { label: "Salasana", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
-          return null;
-        }
-
-        try {
-          const { data: user } = await supabase
-            .from("User")
-            .select("*")
-            .eq("email", credentials.email)
-            .single();
-
-          if (!user) return null;
-
-          const isValid = await bcrypt.compare(
-            credentials.password,
-            user.passwordHash
-          );
-
-          if (!isValid) return null;
-
-          return {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-          };
-        } catch (err) {
-          console.error("Authorization error:", err);
-          return null;
-        }
+        return authorizeWithSupabase(credentials);
       },
     }),
     GoogleProvider({
@@ -66,7 +34,7 @@ const handler = NextAuth({
       if (account?.provider === "google") {
         try {
           // Check if user exists
-          const { data: existingUser } = await supabase
+          const { data: existingUser } = await adminSupabase
             .from("User")
             .select("*")
             .eq("email", user.email!)
@@ -74,7 +42,7 @@ const handler = NextAuth({
 
           if (!existingUser) {
             // Create new user from Google
-            const { error } = await supabase
+            const { error } = await adminSupabase
               .from("User")
               .insert([{
                 id: uuidv4(),
@@ -94,15 +62,17 @@ const handler = NextAuth({
     },
 
     async jwt({ token, user }) {
-      if (user) {
-        (token as any).id = (user as any).id;
+      const mutableToken = token as JWT & { id?: string };
+      if (user && typeof user === "object" && "id" in user && typeof user.id === "string") {
+        mutableToken.id = user.id;
       }
-      return token;
+      return mutableToken;
     },
 
     async session({ session, token }) {
-      if (token && session.user) {
-        (session.user as any).id = (token as any).id;
+      const tokenWithId = token as JWT & { id?: unknown };
+      if (session.user && typeof tokenWithId.id === "string") {
+        (session.user as typeof session.user & { id?: string }).id = tokenWithId.id;
       }
       return session;
     },

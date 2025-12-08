@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
+import lyvoLogo from "@/public/images/lyvo-logo.png";
 import AuthButtons from "@/components/AuthButtons";
 
 const translations = {
@@ -82,10 +84,12 @@ export default function Header() {
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-6 px-4 py-3 sm:px-6 lg:py-4">
         <div className="flex items-center gap-4">
           <Link href={`/${currentLocale}`} className="flex items-center" aria-label="Lyvo home">
-            <img
-              src="/images/lyvo-logo.png"
+            <Image
+              src={lyvoLogo}
               alt="Lyvo logo"
               className="h-11 w-auto object-contain"
+              priority
+              sizes="(max-width: 768px) 128px, 176px"
             />
           </Link>
           <p className="hidden text-sm font-semibold text-emerald-700 sm:block">

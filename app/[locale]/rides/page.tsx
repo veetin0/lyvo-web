@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useMemo, useEffect, ChangeEvent, useRef } from "react";
+import { useState, useMemo, useEffect, ChangeEvent, useRef, useCallback } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import AlertBox from "@/components/AlertBox";
 import { RideMiniMap } from "@/components/RideMiniMap";
 import { motion, AnimatePresence } from "framer-motion";
@@ -58,6 +59,15 @@ const translations = {
     ridesLoadFailed: "Kyytien hakeminen epäonnistui. Yritä hetken kuluttua uudelleen.",
     bookingsNav: "Varaukset",
     profileNav: "Profiili",
+    chatWithDriver: "Keskustele kuskin kanssa",
+    chatTitle: "Keskustelu",
+    chatPlaceholder: "Kirjoita viesti...",
+    chatSend: "Lähetä",
+    chatEmpty: "Ei viestejä vielä.",
+    chatLoading: "Ladataan viestejä...",
+    chatError: "Keskustelua ei voitu avata.",
+    chatYou: "Sinä",
+    chatOpen: "Avaa chat",
   },
   en: {
     title: "Find a Ride",
@@ -106,6 +116,15 @@ const translations = {
     ridesLoadFailed: "Failed to load rides. Please try again shortly.",
     bookingsNav: "Bookings",
     profileNav: "Profile",
+    chatWithDriver: "Chat with driver",
+    chatTitle: "Chat",
+    chatPlaceholder: "Write a message...",
+    chatSend: "Send",
+    chatEmpty: "No messages yet.",
+    chatLoading: "Loading messages...",
+    chatError: "Unable to open chat.",
+    chatYou: "You",
+    chatOpen: "Open chat",
   },
   sv: {
     title: "Hitta skjuts",
@@ -154,6 +173,15 @@ const translations = {
     ridesLoadFailed: "Det gick inte att hämta skjutsar. Försök igen senare.",
     bookingsNav: "Bokningar",
     profileNav: "Profil",
+    chatWithDriver: "Chatta med föraren",
+    chatTitle: "Chatt",
+    chatPlaceholder: "Skriv ett meddelande...",
+    chatSend: "Skicka",
+    chatEmpty: "Inga meddelanden ännu.",
+    chatLoading: "Laddar meddelanden...",
+    chatError: "Kunde inte öppna chatten.",
+    chatYou: "Du",
+    chatOpen: "Öppna chatt",
   },
 };
 
@@ -177,6 +205,97 @@ interface Ride {
   durationSeconds?: number | null;
   routePolyline?: string | null;
   stops?: Array<{ city?: string; price?: string }> | null;
+}
+
+interface ChatMessage {
+  id: string;
+  senderId: string;
+  content: string;
+  createdAt: string;
+}
+
+interface ActiveChat {
+  conversationId: string;
+  partnerId: string;
+  partnerName: string;
+  partnerEmail?: string | null;
+  partnerPicture?: string | null;
+  rideId?: string | null;
+}
+
+const rideFeatureKeys = [
+  "electric",
+  "quiet",
+  "pets",
+  "van",
+  "femaleDriver",
+  "popular",
+] as const;
+
+type RideFeatureKey = typeof rideFeatureKeys[number];
+
+type SortOption = "" | "price" | "time" | "rating";
+
+type RideFilters = {
+  from: string;
+  to: string;
+  date: string;
+  time: string;
+  sort: SortOption;
+  showFilters: boolean;
+  minPrice: number;
+  maxPrice: number;
+  minSeats: number;
+} & Record<RideFeatureKey, boolean>;
+
+const rideFeatureLabelMap: Record<RideFeatureKey, { fi: string; en: string; sv: string }> = {
+  electric: { fi: "Sähköauto", en: "Electric car", sv: "Elbil" },
+  quiet: { fi: "Hiljainen kyyti", en: "Quiet ride", sv: "Tyst skjuts" },
+  pets: { fi: "Lemmikit sallittu", en: "Pets allowed", sv: "Husdjur tillåtna" },
+  van: { fi: "Tila-auto", en: "Van", sv: "Skåpbil" },
+  femaleDriver: { fi: "Naiskuljettaja", en: "Female driver", sv: "Kvinnlig förare" },
+  popular: { fi: "Suosittu kyyti", en: "Popular ride", sv: "Populär skjuts" },
+};
+
+const dbOptionLabelMap: Record<Exclude<RideFeatureKey, "femaleDriver" | "popular">, string> = {
+  electric: "Sähköauto",
+  quiet: "Hiljainen kyyti",
+  pets: "Lemmikit sallittu",
+  van: "Tila-auto",
+};
+
+const createDefaultFilters = (): RideFilters => ({
+  from: "",
+  to: "",
+  date: "",
+  time: "",
+  sort: "",
+  showFilters: false,
+  minPrice: 0,
+  maxPrice: 100,
+  minSeats: 0,
+  electric: false,
+  quiet: false,
+  pets: false,
+  van: false,
+  femaleDriver: false,
+  popular: false,
+});
+
+interface BookingSummary {
+  ride?: { id?: string | null } | null;
+  ride_id?: string | null;
+}
+
+interface ConversationResponse {
+  id: string;
+  rideId?: string | null;
+  partner?: {
+    id?: string | null;
+    name?: string | null;
+    email?: string | null;
+    profilePictureData?: string | null;
+  } | null;
 }
 
 const supabase = createClient(
@@ -254,6 +373,106 @@ const normalizeStops = (stops: unknown): Array<{ city?: string; price?: string }
   return [];
 };
 
+const formatDriverDisplayName = (name: string): string => {
+  const parts = name.split(" ").filter(Boolean);
+  if (parts.length === 0) {
+    return "Tuntematon";
+  }
+  const [first, ...rest] = parts;
+  const last = rest.at(-1);
+  return last ? `${first} ${last.charAt(0)}.` : first;
+};
+
+const toFiniteNumber = (value: unknown): number | null => {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const toNonEmptyString = (value: unknown): string | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const normalizeOptions = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  }
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed)
+        ? parsed.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
+const transformRideRow = (raw: Record<string, unknown>, fallbackCar: string): Ride | null => {
+  const id = toNonEmptyString(raw.id);
+  const owner = toNonEmptyString(raw.owner);
+  const fromCity = toNonEmptyString(raw.from_city);
+  const toCity = toNonEmptyString(raw.to_city);
+  const departureRaw = toNonEmptyString(raw.departure);
+  const priceValue = toFiniteNumber(raw.price_eur);
+
+  if (!id || !owner || !fromCity || !toCity || !departureRaw || priceValue === null) {
+    return null;
+  }
+
+  const departureDate = new Date(departureRaw);
+  if (Number.isNaN(departureDate.getTime())) {
+    return null;
+  }
+
+  const seatsValue = toFiniteNumber(raw.seats);
+  const distanceMeters = toFiniteNumber(raw.distance_meters);
+  const durationSeconds = toFiniteNumber(raw.duration_seconds);
+  const driverRating = toFiniteNumber(raw.driver_rating);
+  const driverNameRaw = toNonEmptyString(raw.driver_name);
+  const carValue = toNonEmptyString(raw.car) ?? fallbackCar;
+
+  return {
+    id,
+    from: fromCity,
+    to: toCity,
+    date: departureDate.toLocaleDateString("fi-FI"),
+    time: departureDate.toLocaleTimeString("fi-FI", { hour: "2-digit", minute: "2-digit" }),
+    price: priceValue,
+    car: carValue,
+    driver: {
+      name: driverNameRaw ? formatDriverDisplayName(driverNameRaw) : "Tuntematon",
+      rating: driverRating ?? 0,
+    },
+    options: normalizeOptions(raw.options),
+    seats: seatsValue !== null ? Math.max(Math.floor(seatsValue), 0) : null,
+    owner,
+    distanceMeters,
+    durationSeconds,
+    routePolyline: toNonEmptyString(raw.route_polyline),
+    stops: normalizeStops(raw.stops),
+  };
+};
+
+const readStringField = (source: Record<string, unknown> | undefined, key: string): string | null => {
+  if (!source) {
+    return null;
+  }
+  const value = source[key];
+  return typeof value === "string" ? value : null;
+};
+
 export default function EtsiKyyti() {
   const pathname = usePathname();
   const locale = (pathname.split('/')[1] || 'fi') as keyof typeof translations;
@@ -261,18 +480,12 @@ export default function EtsiKyyti() {
 
   const [rides, setRides] = useState<Ride[]>([]);
   const { data: session } = useSession();
-  const [filters, setFilters] = useState<Record<string, any>>({
-    from: "",
-    to: "",
-    date: "",
-    time: "",
-    sort: "",
-    showFilters: false,
-    minPrice: 0,
-    maxPrice: 100,
-    minSeats: 0,
-  });
-  const [loading, setLoading] = useState(true);
+  const sessionUserRecord = session?.user as Record<string, unknown> | undefined;
+  const sessionUserId = readStringField(sessionUserRecord, "id");
+  const sessionUserEmail = readStringField(sessionUserRecord, "email");
+  const hasSessionUser = sessionUserId !== null || sessionUserEmail !== null;
+  const currentUserId = sessionUserId ?? sessionUserEmail ?? null;
+  const [filters, setFilters] = useState<RideFilters>(() => createDefaultFilters());
   const [bookedRides, setBookedRides] = useState<Record<string, boolean>>({});
   const [userRideIds, setUserRideIds] = useState<Set<string>>(new Set());
   const router = useRouter();
@@ -282,8 +495,195 @@ export default function EtsiKyyti() {
   const [profilePictures, setProfilePictures] = useState<Record<string, string | null>>({});
   const [selectedRide, setSelectedRide] = useState<Ride | null>(null);
   const [bookingRideId, setBookingRideId] = useState<string | null>(null);
+  const [activeChat, setActiveChat] = useState<ActiveChat | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [isSendingChat, setIsSendingChat] = useState(false);
   const filtersAnchorRef = useRef<HTMLDivElement | null>(null);
+  const chatMessagesEndRef = useRef<HTMLDivElement | null>(null);
   const closeRideDetails = () => setSelectedRide(null);
+
+  const scrollChatToBottom = useCallback(() => {
+    if (chatMessagesEndRef.current) {
+      chatMessagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, []);
+
+  const formatMessageTimestamp = useCallback(
+    (value: string) => {
+      if (!value) {
+        return "";
+      }
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return "";
+      }
+      const now = new Date();
+      const sameDay =
+        date.getFullYear() === now.getFullYear() &&
+        date.getMonth() === now.getMonth() &&
+        date.getDate() === now.getDate();
+      const time = date.toLocaleTimeString(locale, {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      return sameDay ? time : `${date.toLocaleDateString(locale)} ${time}`;
+    },
+    [locale]
+  );
+
+  const fetchChatMessages = useCallback(
+    async (conversationId: string, withSpinner = true) => {
+      if (!conversationId) {
+        return;
+      }
+      if (withSpinner) {
+        setIsChatLoading(true);
+      }
+      try {
+        const response = await fetch(`/api/chat/messages?conversationId=${conversationId}`);
+        if (!response.ok) {
+          throw new Error("Failed to fetch chat messages");
+        }
+        const data: ChatMessage[] = await response.json();
+        setChatMessages(data);
+        requestAnimationFrame(scrollChatToBottom);
+      } catch (error) {
+        console.error("Failed to fetch chat messages:", error);
+        setAlertType("error");
+        setAlertMessage(t.chatError);
+        setTimeout(() => setAlertMessage(null), 3000);
+      } finally {
+        if (withSpinner) {
+          setIsChatLoading(false);
+        }
+      }
+    },
+    [scrollChatToBottom, t.chatError]
+  );
+
+  const handleOpenChat = async (ride: Ride) => {
+    if (!hasSessionUser) {
+      setShowLoginPrompt(true);
+      return;
+    }
+
+    if (!currentUserId) {
+      setAlertType("error");
+      setAlertMessage(t.chatError);
+      setTimeout(() => setAlertMessage(null), 3000);
+      return;
+    }
+
+    if (ride.owner === currentUserId) {
+      return;
+    }
+
+    setIsChatLoading(true);
+    setChatMessages([]);
+    setChatInput("");
+
+    try {
+      const response = await fetch("/api/chat/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetUserId: ride.owner, rideId: ride.id }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to open conversation");
+      }
+
+      const conversation: ConversationResponse = await response.json();
+      const partner = conversation.partner ?? undefined;
+
+      setActiveChat({
+        conversationId: conversation.id,
+        partnerId: partner?.id ?? ride.owner,
+        partnerName: partner?.name ?? ride.driver?.name ?? t.chatWithDriver,
+        partnerEmail: partner?.email ?? null,
+        partnerPicture: partner?.profilePictureData ?? profilePictures[ride.owner] ?? null,
+        rideId: conversation.rideId ?? ride.id,
+      });
+
+      await fetchChatMessages(conversation.id, false);
+      requestAnimationFrame(scrollChatToBottom);
+    } catch (error) {
+      console.error("Error opening chat:", error);
+      setAlertType("error");
+      setAlertMessage(t.chatError);
+      setTimeout(() => setAlertMessage(null), 3000);
+      setActiveChat(null);
+    } finally {
+      setIsChatLoading(false);
+    }
+  };
+
+  const handleCloseChat = () => {
+    setActiveChat(null);
+    setChatMessages([]);
+    setChatInput("");
+    setIsChatLoading(false);
+    setIsSendingChat(false);
+  };
+
+  const handleSendChatMessage = async () => {
+    if (!activeChat) {
+      return;
+    }
+
+    const trimmed = chatInput.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    setChatInput("");
+    setIsSendingChat(true);
+
+    try {
+      const response = await fetch("/api/chat/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: activeChat.conversationId,
+          content: trimmed,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to send message");
+      }
+
+      const newMessage: ChatMessage = await response.json();
+      setChatMessages((prev) => [...prev, newMessage]);
+      requestAnimationFrame(scrollChatToBottom);
+    } catch (error) {
+      console.error("Error sending chat message:", error);
+      setAlertType("error");
+      setAlertMessage(t.chatError);
+      setTimeout(() => setAlertMessage(null), 3000);
+      setChatInput(trimmed);
+    } finally {
+      setIsSendingChat(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!activeChat?.conversationId) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void fetchChatMessages(activeChat.conversationId, false);
+    }, 5000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [activeChat?.conversationId, fetchChatMessages]);
+
+  useEffect(() => {
+    scrollChatToBottom();
+  }, [chatMessages, scrollChatToBottom]);
 
   const confirmBooking = async (payload: { rideId: string }) => {
     // Hook for future payment flow: integrate Stripe checkout before confirming the booking.
@@ -307,7 +707,7 @@ export default function EtsiKyyti() {
       return;
     }
 
-    if (!session?.user) {
+    if (!hasSessionUser) {
       setShowLoginPrompt(true);
       return;
     }
@@ -398,110 +798,73 @@ export default function EtsiKyyti() {
           .from("rides")
           .select("*")
           .order("created_at", { ascending: false });
-        if (error) throw error;
 
-        const formatted = data.map((r: any) => {
-          const departureDate = new Date(r.departure);
-          const stops = normalizeStops(r.stops);
+        if (error) {
+          throw error;
+        }
 
-          return {
-            id: r.id,
-            from: r.from_city,
-            to: r.to_city,
-            date: departureDate.toLocaleDateString("fi-FI"),
-            time: departureDate.toLocaleTimeString("fi-FI", { hour: "2-digit", minute: "2-digit" }),
-            price: r.price_eur,
-            car: r.car || t.carNotSpecified,
-            driver: {
-              name: r.driver_name
-                ? (() => {
-                    const [first, last] = r.driver_name.split(" ");
-                    return last ? `${first} ${last[0]}.` : first;
-                  })()
-                : "Tuntematon",
-              rating: r.driver_rating ?? 0,
-            },
-            options: Array.isArray(r.options)
-              ? r.options
-              : typeof r.options === "string"
-                ? (() => {
-                    try {
-                      const parsed = JSON.parse(r.options);
-                      return Array.isArray(parsed) ? parsed : [];
-                    } catch {
-                      return [];
-                    }
-                  })()
-                : r.options || [],
-            seats: r.seats ?? null,
-            owner: r.owner,
-            distanceMeters: typeof r.distance_meters === "number"
-              ? r.distance_meters
-              : r.distance_meters !== null && r.distance_meters !== undefined
-                ? Number(r.distance_meters)
-                : null,
-            durationSeconds: typeof r.duration_seconds === "number"
-              ? r.duration_seconds
-              : r.duration_seconds !== null && r.duration_seconds !== undefined
-                ? Number(r.duration_seconds)
-                : null,
-            routePolyline: r.route_polyline ?? null,
-            stops,
-          } as Ride;
-        });
+        const rawRows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
+        const typedRides = rawRows.reduce<Ride[]>((acc, row) => {
+          const ride = transformRideRow(row, t.carNotSpecified);
+          if (ride) {
+            acc.push(ride);
+          }
+          return acc;
+        }, []);
 
-        // Load profile pictures from localStorage
         const pictures: Record<string, string | null> = {};
-        formatted.forEach((ride: Ride) => {
+        for (const ride of typedRides) {
           const savedPicture = localStorage.getItem(`profilePicture_${ride.owner}`);
           if (savedPicture) {
             pictures[ride.owner] = savedPicture;
           }
-        });
+        }
         setProfilePictures(pictures);
+        setRides(typedRides);
 
-        setRides(formatted);
-
-        // Fetch user's own rides and booked rides
-        if (session?.user) {
+        if (hasSessionUser) {
           try {
-            const userId = (session.user as any).id;
-            const userOwnRides = formatted.filter((ride: any) => ride.owner === userId);
-            const userRideIdSet = new Set(userOwnRides.map((r: any) => r.id));
-            setUserRideIds(userRideIdSet);
+            if (sessionUserId) {
+              const userOwnRides = typedRides.filter((ride) => ride.owner === sessionUserId);
+              setUserRideIds(new Set(userOwnRides.map((ride) => ride.id)));
+            } else {
+              setUserRideIds(new Set());
+            }
 
-            // Fetch user's booked rides
             const response = await fetch("/api/bookings");
             if (response.ok) {
-              const bookings = await response.json();
-              const bookedRideIds: Record<string, boolean> = {};
-              bookings.forEach((booking: any) => {
-                const rideId = booking.ride?.id || booking.ride_id;
-                if (rideId) {
-                  bookedRideIds[rideId] = true;
-                }
-              });
-              setBookedRides(bookedRideIds);
+              const bookingsJson: unknown = await response.json();
+              if (Array.isArray(bookingsJson)) {
+                const bookedRideIds: Record<string, boolean> = {};
+                (bookingsJson as BookingSummary[]).forEach((booking) => {
+                  const relatedRideId =
+                    (booking.ride && typeof booking.ride.id === "string" ? booking.ride.id : null) ??
+                    (typeof booking.ride_id === "string" ? booking.ride_id : null);
+                  if (relatedRideId) {
+                    bookedRideIds[relatedRideId] = true;
+                  }
+                });
+                setBookedRides(bookedRideIds);
+              }
             }
           } catch (err) {
             console.error("Error fetching user rides and bookings:", err);
           }
         }
       } catch (error) {
-        const errorMessage =
+        const message =
           error && typeof error === "object" && "message" in error
-            ? (error as { message?: string }).message
+            ? String((error as { message?: string }).message ?? "")
             : String(error ?? "Unknown error");
-        console.error("Virhe haettaessa kyytejä Supabasesta:", errorMessage);
+        console.error("Virhe haettaessa kyytejä Supabasesta:", message);
         setAlertType("error");
-        setAlertMessage(`${t.ridesLoadFailed}${errorMessage ? ` (${errorMessage})` : ""}`.trim());
+        setAlertMessage(`${t.ridesLoadFailed}${message ? ` (${message})` : ""}`.trim());
         setTimeout(() => setAlertMessage(null), 4000);
-      } finally {
-        setLoading(false);
       }
     };
-    fetchRides();
-  }, [session]);
+
+    void fetchRides();
+  }, [hasSessionUser, sessionUserId, t.carNotSpecified, t.ridesLoadFailed]);
 
   useEffect(() => {
     if (!selectedRide) {
@@ -520,9 +883,24 @@ export default function EtsiKyyti() {
     };
   }, [selectedRide]);
 
-  const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setFilters((prev) => ({ ...prev, [name]: value }));
+  const handleInputChange = (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = event.target;
+    setFilters((prev) => {
+      switch (name) {
+        case "from":
+          return { ...prev, from: value };
+        case "to":
+          return { ...prev, to: value };
+        case "date":
+          return { ...prev, date: value };
+        case "time":
+          return { ...prev, time: value };
+        case "sort":
+          return { ...prev, sort: value as SortOption };
+        default:
+          return prev;
+      }
+    });
   };
 
   const toggleFilters = () => {
@@ -564,25 +942,26 @@ export default function EtsiKyyti() {
       );
     });
 
-    // Database option values are always in Finnish
-    const dbOptions = {
-      electric: "Sähköauto",
-      quiet: "Hiljainen kyyti",
-      pets: "Lemmikit sallittu",
-      van: "Tila-auto",
-      femaleDriver: "Naiskuljettaja",
-      popular: "Suosittu kyyti",
-    };
-
-    // Check filters by database option key (locale doesn't affect what's stored in DB)
-    if (filters["electric"]) results = results.filter((r) => r.options.includes(dbOptions.electric));
-    if (filters["quiet"]) results = results.filter((r) => r.options.includes(dbOptions.quiet));
-    if (filters["pets"]) results = results.filter((r) => r.options.includes(dbOptions.pets));
-    if (filters["van"]) results = results.filter((r) => r.options.includes(dbOptions.van));
-    if (filters["femaleDriver"]) results = results.filter((r) =>
-      ["Sara", "Anna", "Laura"].some((n) => r.driver.name.includes(n))
-    );
-    if (filters["popular"]) results = results.filter((r) => r.driver.rating > 4.5);
+    if (filters.electric) {
+      results = results.filter((ride) => ride.options.includes(dbOptionLabelMap.electric));
+    }
+    if (filters.quiet) {
+      results = results.filter((ride) => ride.options.includes(dbOptionLabelMap.quiet));
+    }
+    if (filters.pets) {
+      results = results.filter((ride) => ride.options.includes(dbOptionLabelMap.pets));
+    }
+    if (filters.van) {
+      results = results.filter((ride) => ride.options.includes(dbOptionLabelMap.van));
+    }
+    if (filters.femaleDriver) {
+      results = results.filter((ride) =>
+        ["Sara", "Anna", "Laura"].some((name) => ride.driver.name.includes(name))
+      );
+    }
+    if (filters.popular) {
+      results = results.filter((ride) => ride.driver.rating > 4.5);
+    }
 
     if (filters.sort === "price") results.sort((a, b) => a.price - b.price);
     if (filters.sort === "time") results.sort((a, b) => a.time.localeCompare(b.time));
@@ -606,10 +985,10 @@ export default function EtsiKyyti() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6 }}
-  className="min-h-screen bg-gradient-to-b from-emerald-50 via-white to-emerald-100 px-4 pt-24 pb-32 text-center md:py-16"
+      className="min-h-screen bg-gradient-to-b from-emerald-50 via-white to-emerald-100 px-4 pt-24 pb-32 text-center md:py-16"
     >
       <div className="max-w-3xl mx-auto">
-  <h1 className="mb-10 bg-gradient-to-r from-emerald-500 to-emerald-700 bg-clip-text text-transparent text-3xl font-extrabold sm:text-4xl">
+        <h1 className="mb-10 bg-gradient-to-r from-emerald-500 to-emerald-700 bg-clip-text text-transparent text-3xl font-extrabold sm:text-4xl">
           {t.title}
         </h1>
 
@@ -708,32 +1087,32 @@ export default function EtsiKyyti() {
 
             {/* Existing Checkboxes */}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {[
-                { key: "electric", label: locale === "fi" ? "Sähköauto" : locale === "sv" ? "Elbilar" : "Electric car" },
-                { key: "quiet", label: locale === "fi" ? "Hiljainen kyyti" : locale === "sv" ? "Tyst skjuts" : "Quiet ride" },
-                { key: "pets", label: locale === "fi" ? "Lemmikit sallittu" : locale === "sv" ? "Husdjur tillåtna" : "Pets allowed" },
-                { key: "van", label: locale === "fi" ? "Tila-auto" : locale === "sv" ? "Skåpbil" : "Van" },
-                { key: "femaleDriver", label: locale === "fi" ? "Naiskuljettaja" : locale === "sv" ? "Kvinnlig förare" : "Female driver" },
-                { key: "popular", label: locale === "fi" ? "Suosittu kyyti" : locale === "sv" ? "Populär skjuts" : "Popular ride" },
-              ].map(
-                (opt) => (
-                  <label key={opt.key} className="flex items-center gap-2 text-sm text-emerald-700 font-medium hover:text-emerald-600 transition">
-                    <input
-                      type="checkbox"
-                      checked={!!filters[opt.key]}
-                      onChange={(e) => setFilters((prev) => ({ ...prev, [opt.key]: e.target.checked }))}
-                      className="accent-emerald-500 w-4 h-4"
-                    />
-                    {opt.label}
-                  </label>
-                )
-              )}
+              {rideFeatureKeys.map((key) => (
+                <label
+                  key={key}
+                  className="flex items-center gap-2 text-sm text-emerald-700 font-medium hover:text-emerald-600 transition"
+                >
+                  <input
+                    type="checkbox"
+                    checked={filters[key]}
+                    onChange={(event) => setFilters((prev) => ({ ...prev, [key]: event.target.checked }))}
+                    className="accent-emerald-500 w-4 h-4"
+                  />
+                  {rideFeatureLabelMap[key][locale]}
+                </label>
+              ))}
             </div>
           </motion.div>
         )}
 
         {/* Clear Filters Button */}
-        {(filters.from || filters.to || filters.date || filters.minPrice !== 0 || filters.maxPrice !== 100 || filters.minSeats !== 0 || Object.keys(filters).some((key) => filters[key] === true)) && (
+        {(filters.from ||
+          filters.to ||
+          filters.date ||
+          filters.minPrice !== 0 ||
+          filters.maxPrice !== 100 ||
+          filters.minSeats !== 0 ||
+          rideFeatureKeys.some((key) => filters[key])) && (
           <motion.div
             initial={{ opacity: 0, y: -5 }}
             animate={{ opacity: 1, y: 0 }}
@@ -741,23 +1120,7 @@ export default function EtsiKyyti() {
           >
             <button
               type="button"
-              onClick={() => setFilters({
-                from: "",
-                to: "",
-                date: "",
-                time: "",
-                sort: "",
-                showFilters: false,
-                minPrice: 0,
-                maxPrice: 100,
-                minSeats: 0,
-                electric: false,
-                quiet: false,
-                pets: false,
-                van: false,
-                femaleDriver: false,
-                popular: false,
-              })}
+              onClick={() => setFilters(createDefaultFilters())}
               className="px-6 py-2 bg-white text-emerald-600 border border-emerald-300 rounded-lg font-medium shadow-sm hover:bg-emerald-50 transition"
             >
               {t.clearFilters}
@@ -777,6 +1140,7 @@ export default function EtsiKyyti() {
               const isRideOwner = userRideIds.has(ride.id);
               const isRideBooked = Boolean(bookedRides[ride.id]);
               const isRideBooking = bookingRideId === ride.id;
+              const ownerPicture = profilePictures[ride.owner];
               return (
                 <motion.div
                   key={ride.id}
@@ -808,14 +1172,17 @@ export default function EtsiKyyti() {
                   <p className="text-sm text-neutral-500">{ride.car || t.carNotSpecified}</p>
                   <div className="flex items-center justify-between mt-3">
                     <div className="flex items-center gap-2">
-                      {profilePictures[ride.owner] && (
-                        <img
-                          src={profilePictures[ride.owner] || ""}
-                          alt={ride.driver?.name}
+                      {ownerPicture && (
+                        <Image
+                          src={ownerPicture}
+                          alt={ride.driver?.name || "Ride owner"}
+                          width={32}
+                          height={32}
+                          unoptimized
                           className="w-8 h-8 rounded-full object-cover border border-emerald-200"
                         />
                       )}
-                      {!profilePictures[ride.owner] && (
+                      {!ownerPicture && (
                         <div className="w-8 h-8 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center text-emerald-600 text-xs font-bold">
                           {ride.driver?.name?.charAt(0).toUpperCase()}
                         </div>
@@ -898,6 +1265,17 @@ export default function EtsiKyyti() {
                       ) : (
                         t.bookRide
                       )}
+                    </button>
+                  )}
+                  {!isRideOwner && (
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handleOpenChat(ride);
+                      }}
+                      className="mt-2 w-full px-4 py-2 rounded-xl border border-emerald-200 bg-white text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50"
+                    >
+                      {t.chatWithDriver}
                     </button>
                   )}
                 </motion.div>
@@ -1053,9 +1431,12 @@ export default function EtsiKyyti() {
                 <div className="flex flex-col gap-4 rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 md:flex-row md:items-center md:justify-between">
                   <div className="flex items-center gap-3">
                     {profilePictures[selectedRide.owner] ? (
-                      <img
+                      <Image
                         src={profilePictures[selectedRide.owner] || ""}
-                        alt={selectedRide.driver?.name}
+                        alt={selectedRide.driver?.name || "Ride owner"}
+                        width={48}
+                        height={48}
+                        unoptimized
                         className="h-12 w-12 rounded-full border border-emerald-200 object-cover"
                       />
                     ) : (
@@ -1108,6 +1489,20 @@ export default function EtsiKyyti() {
                         {isSelectedRideBooking ? t.bookingInProgress : t.bookRide}
                       </button>
                     )}
+                    {!isSelectedRideOwner && (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (selectedRide) {
+                            void handleOpenChat(selectedRide);
+                          }
+                        }}
+                        className="inline-flex items-center justify-center rounded-xl border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 shadow hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                      >
+                        {t.chatOpen}
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={(event) => {
@@ -1158,6 +1553,113 @@ export default function EtsiKyyti() {
                   className="px-5 py-2 rounded-xl bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50 transition"
                 >
                   Cancel
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {activeChat && (
+          <motion.div
+            key="chat-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4 py-6"
+            onClick={handleCloseChat}
+          >
+            <motion.div
+              initial={{ scale: 0.94, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.94, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={(event) => event.stopPropagation()}
+              className="w-full max-w-lg rounded-3xl border border-emerald-100 bg-white shadow-2xl p-6 flex flex-col"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {activeChat.partnerPicture ? (
+                    <Image
+                      src={activeChat.partnerPicture}
+                      alt={activeChat.partnerName || "Chat partner"}
+                      width={48}
+                      height={48}
+                      unoptimized
+                      className="h-12 w-12 rounded-full border border-emerald-200 object-cover"
+                    />
+                  ) : (
+                    <div className="h-12 w-12 rounded-full border border-emerald-200 bg-emerald-100 flex items-center justify-center text-lg font-bold text-emerald-600">
+                      {(activeChat.partnerName || "?").charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-800">{activeChat.partnerName}</p>
+                    {activeChat.partnerEmail && (
+                      <p className="text-xs text-neutral-500">{activeChat.partnerEmail}</p>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCloseChat}
+                  aria-label={t.close}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-emerald-100 bg-white text-emerald-600 shadow-sm transition hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="mt-4 flex-1 overflow-y-auto rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 space-y-3" style={{ minHeight: "220px", maxHeight: "400px" }}>
+                {isChatLoading ? (
+                  <p className="text-sm text-neutral-500">{t.chatLoading}</p>
+                ) : chatMessages.length === 0 ? (
+                  <p className="text-sm text-neutral-500 text-center">{t.chatEmpty}</p>
+                ) : (
+                  chatMessages.map((message) => {
+                    const isMine = message.senderId === currentUserId;
+                    return (
+                      <div key={message.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
+                        <div
+                          className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm shadow ${
+                            isMine
+                              ? "bg-emerald-500 text-white"
+                              : "bg-white text-neutral-700 border border-emerald-100"
+                          }`}
+                        >
+                          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+                          <span className={`mt-1 block text-xs ${isMine ? "text-emerald-100" : "text-neutral-500"}`}>
+                            {isMine ? t.chatYou : activeChat.partnerName} • {formatMessageTimestamp(message.createdAt)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+                <div ref={chatMessagesEndRef} />
+              </div>
+              <div className="mt-4 flex items-center gap-3">
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(event) => setChatInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      void handleSendChatMessage();
+                    }
+                  }}
+                  placeholder={t.chatPlaceholder}
+                  className="flex-1 rounded-xl border border-emerald-200 bg-white px-4 py-2 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                  disabled={isChatLoading}
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleSendChatMessage()}
+                  disabled={isSendingChat || isChatLoading || chatInput.trim().length === 0}
+                  className="inline-flex items-center justify-center rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                >
+                  {isSendingChat ? `${t.chatSend}...` : t.chatSend}
                 </button>
               </div>
             </motion.div>

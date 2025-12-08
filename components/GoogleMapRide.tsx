@@ -35,6 +35,8 @@ const COUNTRY_LABELS: Record<string, string> = {
 
 const DEFAULT_COUNTRY_BIASES = ["fi", "se", "no"] as const;
 
+type DirectionsEndpoint = google.maps.DirectionsRequest["origin"];
+
 const appendCountryHint = (query: string, countryCode: string): string => {
   const trimmed = query.trim();
   if (!trimmed) {
@@ -217,7 +219,7 @@ export default function GoogleMapRide({
   stops = [],
   countryBiases = DEFAULT_COUNTRY_BIASES,
 }: GoogleMapRideProps) {
-  const [directions, setDirections] = useState<any>(null);
+  const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
   const [showNotification, setShowNotification] = useState(false);
@@ -254,7 +256,7 @@ export default function GoogleMapRide({
       const selection = stop.place ?? null;
       if (selection?.placeId) {
         waypointCandidates.push({
-          location: { placeId: selection.placeId } as any,
+          location: { placeId: selection.placeId } as google.maps.Place,
           stopover: true,
         });
         return;
@@ -306,7 +308,7 @@ export default function GoogleMapRide({
     const resolveWaypoint = async (
       selection: PlaceSelection | null,
       fallback: string
-    ): Promise<google.maps.LatLngLiteral | { placeId: string } | null> => {
+    ): Promise<DirectionsEndpoint | null> => {
       if (selection?.location) {
         return selection.location;
       }
@@ -317,7 +319,7 @@ export default function GoogleMapRide({
           return placeResult;
         }
 
-        return { placeId: selection.placeId };
+        return { placeId: selection.placeId } as google.maps.Place;
       }
 
       const candidate = (selection?.description ?? fallback ?? "").trim();
@@ -369,15 +371,17 @@ export default function GoogleMapRide({
 
         const directionsService = new window.google.maps.DirectionsService();
 
+        const request: google.maps.DirectionsRequest = {
+          origin: originResolved,
+          destination: destinationResolved,
+          travelMode: window.google.maps.TravelMode.DRIVING,
+          waypoints: waypointCandidates.length ? waypointCandidates : undefined,
+          optimizeWaypoints: false,
+        };
+
         directionsService.route(
-          {
-            origin: originResolved as any,
-            destination: destinationResolved as any,
-            travelMode: window.google.maps.TravelMode.DRIVING,
-            waypoints: waypointCandidates.length ? waypointCandidates : undefined,
-            optimizeWaypoints: false,
-          },
-          (result: any, status: string) => {
+          request,
+          (result: google.maps.DirectionsResult | null, status: google.maps.DirectionsStatus) => {
             if (isCancelled) {
               return;
             }

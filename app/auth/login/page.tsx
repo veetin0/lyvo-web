@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -10,6 +11,44 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [fallbackPath, setFallbackPath] = useState("/");
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const defaultTarget = "/";
+
+    try {
+      const ref = document.referrer;
+      if (!ref) {
+        setFallbackPath(defaultTarget);
+        return;
+      }
+
+      const refUrl = new URL(ref);
+      if (refUrl.origin !== window.location.origin) {
+        setFallbackPath(defaultTarget);
+        return;
+      }
+
+      const pathWithQuery = `${refUrl.pathname}${refUrl.search}`;
+
+      if (pathWithQuery.startsWith("/auth") || pathWithQuery.includes("/profile")) {
+        setFallbackPath(defaultTarget);
+        return;
+      }
+
+      setFallbackPath(pathWithQuery || defaultTarget);
+    } catch {
+      setFallbackPath(defaultTarget);
+    }
+  }, []);
+
+  const handleBackClick = () => {
+    router.push(fallbackPath);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,6 +72,14 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-[#eaf8ec]/40 to-white">
       <div className="bg-white/80 backdrop-blur-lg p-8 rounded-2xl shadow-lg w-full max-w-md">
+        <button
+          type="button"
+          onClick={handleBackClick}
+          className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-[#21a53f] hover:underline"
+        >
+          <span>{"<-"}</span>
+          <span>Takaisin</span>
+        </button>
         <h1 className="text-3xl font-bold text-[#21a53f] mb-6 text-center">
           Kirjaudu Lyvoon
         </h1>
@@ -97,12 +144,9 @@ export default function LoginPage() {
 
         <p className="mt-6 text-center text-sm text-gray-600">
           Eikö sinulla ole vielä tiliä?{" "}
-          <a
-            href="/auth/register"
-            className="text-[#21a53f] hover:underline font-medium"
-          >
+          <Link href="/auth/register" className="text-[#21a53f] hover:underline font-medium">
             Luo tili
-          </a>
+          </Link>
         </p>
       </div>
     </div>

@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { useSession } from "next-auth/react";
+import { X } from "lucide-react";
+import Image from "next/image";
 
 const translations = {
   fi: {
@@ -51,6 +53,17 @@ const translations = {
     profileUpdated: "Profiili päivitetty!",
     profilePictureError: "Profiilikuvan tallennus epäonnistui.",
     profileUpdateError: "Profiilin päivitys epäonnistui.",
+    messages: "Keskustelut",
+    noMessages: "Sinulla ei ole vielä keskusteluja.",
+    chatTitle: "Keskustelu",
+    chatPlaceholder: "Kirjoita viesti...",
+    chatSend: "Lähetä",
+    chatEmpty: "Ei viestejä vielä.",
+    chatLoading: "Ladataan viestejä...",
+    chatError: "Keskustelua ei voitu avata.",
+    chatYou: "Sinä",
+    chatOpen: "Avaa chat",
+    unknownUser: "Tuntematon käyttäjä",
     close: "Sulje",
   },
   en: {
@@ -96,6 +109,17 @@ const translations = {
     profileUpdated: "Profile updated!",
     profilePictureError: "Saving the profile picture failed.",
     profileUpdateError: "Updating the profile failed.",
+    messages: "Messages",
+    noMessages: "You have no conversations yet.",
+    chatTitle: "Chat",
+    chatPlaceholder: "Write a message...",
+    chatSend: "Send",
+    chatEmpty: "No messages yet.",
+    chatLoading: "Loading messages...",
+    chatError: "Unable to open chat.",
+    chatYou: "You",
+    chatOpen: "Open chat",
+    unknownUser: "Unknown user",
     close: "Close",
   },
   sv: {
@@ -141,6 +165,17 @@ const translations = {
     profileUpdated: "Profil uppdaterad!",
     profilePictureError: "Misslyckades att spara profilbilden.",
     profileUpdateError: "Misslyckades att uppdatera profilen.",
+    messages: "Chattar",
+    noMessages: "Du har inga konversationer ännu.",
+    chatTitle: "Chatt",
+    chatPlaceholder: "Skriv ett meddelande...",
+    chatSend: "Skicka",
+    chatEmpty: "Inga meddelanden ännu.",
+    chatLoading: "Laddar meddelanden...",
+    chatError: "Kunde inte öppna chatten.",
+    chatYou: "Du",
+    chatOpen: "Öppna chatt",
+    unknownUser: "Okänd användare",
     close: "Stäng",
   },
 };
@@ -160,6 +195,106 @@ interface User {
   email: string;
 }
 
+interface ConversationSummary {
+  id: string;
+  rideId?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  partner?: {
+    id: string;
+    name?: string | null;
+    email?: string | null;
+    profilePictureData?: string | null;
+  } | null;
+  ride?: {
+    id?: string;
+    from_city?: string | null;
+    to_city?: string | null;
+    departure?: string | null;
+    price_eur?: number | null;
+  } | null;
+  lastMessage?: {
+    content: string;
+    createdAt: string;
+    senderId: string;
+  } | null;
+}
+
+interface ChatMessage {
+  id: string;
+  senderId: string;
+  content: string;
+  createdAt: string;
+}
+
+interface ActiveChat {
+  conversationId: string;
+  partnerId: string;
+  partnerName: string;
+  partnerEmail?: string | null;
+  partnerPicture?: string | null;
+  rideId?: string | null;
+}
+
+type BookingStatus = "pending" | "accepted" | "rejected";
+
+interface BookingRideSummary {
+  id?: string;
+  from_city?: string | null;
+  to_city?: string | null;
+  departure?: string | null;
+  price_eur?: number | null;
+  driver_name?: string | null;
+}
+
+interface BookingEntry {
+  id: string;
+  created_at: string;
+  ride_id?: string | null;
+  status: BookingStatus | string;
+  ride?: BookingRideSummary | null;
+}
+
+interface RiderProfileSummary {
+  id?: string;
+  name?: string | null;
+  email?: string | null;
+  bio?: string | null;
+  profilePictureData?: string | null;
+  driverRating?: number | null;
+  driverRatingCount?: number | null;
+}
+
+interface PendingBookingEntry extends BookingEntry {
+  user_email?: string | null;
+  rider?: RiderProfileSummary | null;
+}
+
+interface SupabaseRideRow {
+  id: string;
+  from_city?: string | null;
+  to_city?: string | null;
+  departure?: string | null;
+  price_eur?: number | null;
+  seats?: number | null;
+  owner?: string | null;
+  car?: string | null;
+  options?: unknown;
+  driver_name?: string | null;
+  driver_rating?: number | null;
+  distance_meters?: number | null;
+  duration_seconds?: number | null;
+  route_polyline?: string | null;
+  stops?: unknown;
+}
+
+type SessionUser = {
+  id?: string | null;
+  name?: string | null;
+  email?: string | null;
+  image?: string | null;
+};
+
 export default function ProfilePage() {
   const pathname = usePathname();
   const locale = (pathname.split('/')[1] || 'fi') as keyof typeof translations;
@@ -170,12 +305,17 @@ export default function ProfilePage() {
     console.error("❌ Supabase ympäristömuuttujat puuttuvat tai ovat virheellisiä!");
   }
   const { data: session, status } = useSession();
+  const sessionUser = (session?.user ?? null) as SessionUser | null;
+  const sessionUserId = sessionUser?.id ?? sessionUser?.email ?? null;
+  const sessionUserName = sessionUser?.name ?? null;
+  const sessionUserEmail = sessionUser?.email ?? null;
   const [user, setUser] = useState<User | null>(null);
   const [rides, setRides] = useState<Ride[]>([]);
   const [loading, setLoading] = useState(true);
-  const [rideToDelete, setRideToDelete] = useState<string | null>(null);
-  const [bookings, setBookings] = useState<any[]>([]);
-  const [pendingBookings, setPendingBookings] = useState<any[]>([]);
+  const [bookings, setBookings] = useState<BookingEntry[]>([]);
+  const [pendingBookings, setPendingBookings] = useState<PendingBookingEntry[]>([]);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
   const [notificationType, setNotificationType] = useState<"success" | "error">("success");
   const [profilePicture, setProfilePicture] = useState<string | null>(null);
@@ -184,8 +324,18 @@ export default function ProfilePage() {
   const [bio, setBio] = useState("");
   const [isEditingBio, setIsEditingBio] = useState(false);
   const [bioDraft, setBioDraft] = useState("");
-  const [selectedRiderProfile, setSelectedRiderProfile] = useState<any | null>(null);
+  const [selectedRiderProfile, setSelectedRiderProfile] = useState<RiderProfileSummary | null>(null);
   const [showRiderProfileModal, setShowRiderProfileModal] = useState(false);
+  const [activeChat, setActiveChat] = useState<ActiveChat | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [isSendingChat, setIsSendingChat] = useState(false);
+  const chatMessagesEndRef = useRef<HTMLDivElement | null>(null);
+  const currentUserId = sessionUserId;
+  const activeConversationDetails = activeChat
+    ? conversations.find((conversation) => conversation.id === activeChat.conversationId)
+    : null;
 
   const bookingStatusBadges: Record<string, { label: string; className: string }> = {
     pending: {
@@ -200,6 +350,18 @@ export default function ProfilePage() {
       label: t.statusRejected,
       className: "bg-rose-100/80 text-rose-700 border border-rose-200",
     },
+  };
+
+  const getProfileAltText = (name?: string | null, email?: string | null, fallback?: string) => {
+    const trimmedName = name?.trim();
+    if (trimmedName) {
+      return trimmedName;
+    }
+    const trimmedEmail = email?.trim();
+    if (trimmedEmail) {
+      return trimmedEmail;
+    }
+    return fallback ?? t.unknownUser;
   };
 
   const formatBookingDate = (value?: string | null) => {
@@ -226,6 +388,206 @@ export default function ProfilePage() {
     return `${date.toLocaleDateString(locale)} ${separator}${time}`;
   };
 
+  const sortConversationList = useCallback((items: ConversationSummary[]) => {
+    return [...items].sort((a, b) => {
+      const parseTime = (entry: ConversationSummary) => {
+        const candidate = entry.lastMessage?.createdAt ?? entry.updatedAt ?? entry.createdAt ?? "";
+        const millis = candidate ? new Date(candidate).getTime() : 0;
+        return Number.isFinite(millis) ? millis : 0;
+      };
+      return parseTime(b) - parseTime(a);
+    });
+  }, []);
+
+  const scrollChatToBottom = useCallback(() => {
+    if (chatMessagesEndRef.current) {
+      chatMessagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, []);
+
+  const formatMessageTimestamp = useCallback(
+    (value?: string | null) => {
+      if (!value) {
+        return "";
+      }
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return "";
+      }
+      const now = new Date();
+      const sameDay =
+        date.getFullYear() === now.getFullYear() &&
+        date.getMonth() === now.getMonth() &&
+        date.getDate() === now.getDate();
+      const time = date.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
+      return sameDay ? time : `${date.toLocaleDateString(locale)} ${time}`;
+    },
+    [locale]
+  );
+
+  const updateConversationWithMessage = useCallback(
+    (conversationId: string, message: ChatMessage) => {
+      setConversations((prev) => {
+        const exists = prev.some((conversation) => conversation.id === conversationId);
+        if (!exists) {
+          return prev;
+        }
+        const updated = prev.map((conversation) =>
+          conversation.id === conversationId
+            ? {
+                ...conversation,
+                lastMessage: message,
+                updatedAt: message.createdAt,
+              }
+            : conversation
+        );
+        return sortConversationList(updated);
+      });
+    },
+    [sortConversationList]
+  );
+
+  const fetchConversations = useCallback(
+    async (withSpinner = true) => {
+      if (!session?.user) {
+        return;
+      }
+      if (withSpinner) {
+        setIsLoadingConversations(true);
+      }
+      try {
+        const response = await fetch("/api/chat/conversations");
+        if (!response.ok) {
+          throw new Error("Failed to load conversations");
+        }
+        const data: ConversationSummary[] = await response.json();
+        setConversations(sortConversationList(data));
+      } catch (error) {
+        console.error("Error fetching conversations:", error);
+        if (withSpinner) {
+          setNotificationType("error");
+          setNotificationMessage(t.chatError);
+          setTimeout(() => setNotificationMessage(null), 3000);
+        }
+      } finally {
+        setIsLoadingConversations(false);
+      }
+    },
+    [session, sortConversationList, t.chatError]
+  );
+
+  const fetchChatMessages = useCallback(
+    async (conversationId: string, showSpinner = true) => {
+      if (!conversationId) {
+        return;
+      }
+      if (showSpinner) {
+        setIsChatLoading(true);
+      }
+      try {
+        const response = await fetch(`/api/chat/messages?conversationId=${conversationId}`);
+        if (!response.ok) {
+          throw new Error("Failed to load messages");
+        }
+        const data: ChatMessage[] = await response.json();
+        setChatMessages(data);
+        const latest = data[data.length - 1];
+        if (latest) {
+          updateConversationWithMessage(conversationId, latest);
+        }
+        requestAnimationFrame(scrollChatToBottom);
+      } catch (error) {
+        console.error("Error fetching chat messages:", error);
+        setNotificationType("error");
+        setNotificationMessage(t.chatError);
+        setTimeout(() => setNotificationMessage(null), 3000);
+      } finally {
+        if (showSpinner) {
+          setIsChatLoading(false);
+        }
+      }
+    },
+    [scrollChatToBottom, t.chatError, updateConversationWithMessage]
+  );
+
+  const handleOpenChatFromList = useCallback(
+    async (conversation: ConversationSummary) => {
+      if (!conversation) {
+        return;
+      }
+
+      const partnerName = conversation.partner?.name || conversation.partner?.email || t.unknownUser;
+
+      setActiveChat({
+        conversationId: conversation.id,
+        partnerId: conversation.partner?.id || conversation.partner?.email || "",
+        partnerName,
+        partnerEmail: conversation.partner?.email ?? null,
+        partnerPicture: conversation.partner?.profilePictureData ?? null,
+        rideId: conversation.rideId ?? conversation.ride?.id ?? null,
+      });
+
+      setChatMessages([]);
+      setChatInput("");
+      setIsChatLoading(true);
+
+      await fetchChatMessages(conversation.id, false);
+      setIsChatLoading(false);
+      requestAnimationFrame(scrollChatToBottom);
+    },
+    [fetchChatMessages, scrollChatToBottom, t.unknownUser]
+  );
+
+  const handleCloseChat = useCallback(() => {
+    setActiveChat(null);
+    setChatMessages([]);
+    setChatInput("");
+    setIsChatLoading(false);
+    setIsSendingChat(false);
+  }, []);
+
+  const handleSendChatMessage = useCallback(async () => {
+    if (!activeChat) {
+      return;
+    }
+
+    const trimmed = chatInput.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    setChatInput("");
+    setIsSendingChat(true);
+
+    try {
+      const response = await fetch("/api/chat/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversationId: activeChat.conversationId,
+          content: trimmed,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to send message");
+      }
+
+      const newMessage: ChatMessage = await response.json();
+      setChatMessages((prev) => [...prev, newMessage]);
+      updateConversationWithMessage(activeChat.conversationId, newMessage);
+      requestAnimationFrame(scrollChatToBottom);
+    } catch (error) {
+      console.error("Error sending message:", error);
+      setNotificationType("error");
+      setNotificationMessage(t.chatError);
+      setChatInput(trimmed);
+      setTimeout(() => setNotificationMessage(null), 3000);
+    } finally {
+      setIsSendingChat(false);
+    }
+  }, [activeChat, chatInput, scrollChatToBottom, t.chatError, updateConversationWithMessage]);
+
   // Hae käyttäjän tiedot ja kyydit Supabasen kautta
   useEffect(() => {
     if (status === "loading") {
@@ -236,7 +598,7 @@ export default function ProfilePage() {
       return;
     }
 
-    const userId = (session?.user as any)?.id || (session?.user as any)?.email;
+  const userId = sessionUserId;
 
     console.log("Session:", session);
     console.log("Status:", status);
@@ -245,9 +607,9 @@ export default function ProfilePage() {
       setLoading(true);
 
       setUser({
-        id: userId || "tuntematon",
-        name: (session?.user as any)?.name || "Tuntematon käyttäjä",
-        email: (session?.user as any)?.email || "",
+        id: userId ?? "tuntematon",
+        name: sessionUserName ?? "Tuntematon käyttäjä",
+        email: sessionUserEmail ?? "",
       });
 
       let fallbackPicture: string | null = null;
@@ -280,10 +642,9 @@ export default function ProfilePage() {
         setBio("");
       }
 
-      let rideRes;
       try {
         console.log("Supabase URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
-        rideRes = await supabase
+        const rideRes = await supabase
           .from("rides")
           .select("id, from_city, to_city, departure, seats, price_eur")
           .eq("owner", userId ?? "");
@@ -315,17 +676,23 @@ export default function ProfilePage() {
             document.body.appendChild(noRidesWarning);
             setTimeout(() => noRidesWarning.remove(), 5000);
           } else {
-            const mappedRides = rideRes.data.map((ride: any) => ({
-              id: ride.id,
-              from: ride.from_city,
-              to: ride.to_city,
-              date: new Date(ride.departure).toLocaleDateString("fi-FI"),
-              time: new Date(ride.departure).toLocaleTimeString("fi-FI", {
-                hour: "2-digit",
-                minute: "2-digit",
-              }),
-              price: ride.price_eur,
-            }));
+            const ridesData = rideRes.data as SupabaseRideRow[];
+            const mappedRides: Ride[] = ridesData.map((ride) => {
+              const departureDate = ride.departure ? new Date(ride.departure) : null;
+              const hasValidDeparture = !!(departureDate && !Number.isNaN(departureDate.getTime()));
+              const formattedDate = hasValidDeparture ? departureDate.toLocaleDateString("fi-FI") : "";
+              const formattedTime = hasValidDeparture
+                ? departureDate.toLocaleTimeString("fi-FI", { hour: "2-digit", minute: "2-digit" })
+                : "";
+              return {
+                id: ride.id,
+                from: ride.from_city ?? "",
+                to: ride.to_city ?? "",
+                date: formattedDate,
+                time: formattedTime,
+                price: ride.price_eur ?? 0,
+              };
+            });
             setRides(mappedRides);
           }
         }
@@ -344,7 +711,7 @@ export default function ProfilePage() {
       try {
         const response = await fetch("/api/bookings");
         if (response.ok) {
-          const bookingsData: any[] = await response.json();
+          const bookingsData = (await response.json()) as BookingEntry[];
           console.log("Bookings fetched from API:", bookingsData);
           setBookings(bookingsData);
         } else {
@@ -361,7 +728,7 @@ export default function ProfilePage() {
       try {
         const pendingResponse = await fetch("/api/bookings?view=owner&status=pending");
         if (pendingResponse.ok) {
-          const pendingData: any[] = await pendingResponse.json();
+          const pendingData = (await pendingResponse.json()) as PendingBookingEntry[];
           console.log("Pending bookings (owner view):", pendingData);
           setPendingBookings(pendingData);
         } else {
@@ -377,17 +744,74 @@ export default function ProfilePage() {
     };
 
     fetchProfileData();
-  }, [router, session, status]);
+  }, [router, session, sessionUserEmail, sessionUserId, sessionUserName, status]);
 
-  const handleDeleteRide = async () => {
-    if (!rideToDelete) return;
+  useEffect(() => {
+    if (status === "loading") {
+      return;
+    }
+    if (status !== "authenticated") {
+      setConversations([]);
+      setIsLoadingConversations(false);
+      return;
+    }
+    void fetchConversations();
+  }, [fetchConversations, status]);
+
+  useEffect(() => {
+    if (status !== "authenticated") {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void fetchConversations(false);
+    }, 15000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [fetchConversations, status]);
+
+  useEffect(() => {
+    if (!activeChat?.conversationId) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void fetchChatMessages(activeChat.conversationId, false);
+    }, 5000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [activeChat?.conversationId, fetchChatMessages]);
+
+  useEffect(() => {
+    if (!activeChat) {
+      return;
+    }
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        handleCloseChat();
+      }
+    };
+    window.addEventListener("keydown", handleEsc);
+    return () => {
+      window.removeEventListener("keydown", handleEsc);
+    };
+  }, [activeChat, handleCloseChat]);
+
+  useEffect(() => {
+    scrollChatToBottom();
+  }, [chatMessages, scrollChatToBottom]);
+
+  const handleDeleteRide = async (rideId: string) => {
+    if (!rideId) {
+      return;
+    }
     try {
-      const response = await fetch(`/api/rides?id=${rideToDelete}`, {
+      const response = await fetch(`/api/rides?id=${rideId}`, {
         method: "DELETE",
       });
       
       if (response.ok) {
-        setRides((prev) => prev.filter((r) => r.id !== rideToDelete));
+        setRides((prev) => prev.filter((ride) => ride.id !== rideId));
         setNotificationType("success");
         setNotificationMessage(t.rideDeleted);
         setTimeout(() => setNotificationMessage(null), 3000);
@@ -402,8 +826,6 @@ export default function ProfilePage() {
       setNotificationType("error");
       setNotificationMessage(t.rideDeleted);
       setTimeout(() => setNotificationMessage(null), 3000);
-    } finally {
-      setRideToDelete(null);
     }
   };
 
@@ -531,19 +953,16 @@ export default function ProfilePage() {
     }
   };
 
-  const openRiderProfileModal = (profile: any, fallbackEmail: string) => {
-    if (profile) {
-      setSelectedRiderProfile(profile);
-    } else {
-      setSelectedRiderProfile({
-        name: fallbackEmail,
-        email: fallbackEmail,
-        bio: "",
-        profilePictureData: null,
-        driverRating: null,
-        driverRatingCount: 0,
-      });
-    }
+  const openRiderProfileModal = (profile: RiderProfileSummary | null | undefined, fallbackEmail: string) => {
+    const fallbackProfile: RiderProfileSummary = {
+      name: fallbackEmail,
+      email: fallbackEmail,
+      bio: "",
+      profilePictureData: null,
+      driverRating: null,
+      driverRatingCount: 0,
+    };
+    setSelectedRiderProfile(profile ?? fallbackProfile);
     setShowRiderProfileModal(true);
   };
 
@@ -577,9 +996,12 @@ export default function ProfilePage() {
             <div className="flex flex-col items-center gap-3">
               <div className="relative">
                 {profilePicture ? (
-                  <img
+                  <Image
                     src={profilePicture}
-                    alt="Profiilikuva"
+                    alt={getProfileAltText(user.name, user.email, t.profilePicture)}
+                    width={128}
+                    height={128}
+                    unoptimized
                     className="w-32 h-32 rounded-full object-cover border-4 border-emerald-200 shadow-md"
                   />
                 ) : (
@@ -712,7 +1134,7 @@ export default function ProfilePage() {
                     </p>
                   </div>
                   <button
-                    onClick={() => setRideToDelete(ride.id)}
+                    onClick={() => handleDeleteRide(ride.id)}
                     className="text-sm font-medium text-red-600 hover:bg-red-100 rounded-lg hover:text-red-700 transition"
                   >
                     {t.delete}
@@ -729,61 +1151,129 @@ export default function ProfilePage() {
             <p className="text-neutral-600">{t.noPendingBookings}</p>
           ) : (
             <div className="space-y-4">
-              {pendingBookings.map((booking: any) => (
-                <motion.div
-                  key={booking.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3 }}
-                  className="p-4 border border-yellow-200 bg-yellow-50 rounded-xl shadow-sm"
-                >
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <p className="font-semibold text-emerald-700">
-                        {booking.ride?.from_city} → {booking.ride?.to_city}
-                      </p>
-                      <p className="text-sm text-neutral-600">
-                        {new Date(booking.ride?.departure).toLocaleDateString("fi-FI")} klo{" "}
-                        {new Date(booking.ride?.departure).toLocaleTimeString("fi-FI", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </p>
-                      <p className="text-sm text-neutral-600">
-                        {t.riderLabel}: {booking.rider?.name ?? booking.user_email}
-                      </p>
-                      {booking.rider?.driverRating ? (
-                        <p className="text-xs text-neutral-500 mt-1">
-                          {t.driverRating}: {booking.rider.driverRating} ⭐ ({booking.rider.driverRatingCount ?? 0})
+              {pendingBookings.map((booking) => {
+                const formattedDeparture = formatRideDateTime(booking.ride?.departure);
+                return (
+                  <motion.div
+                    key={booking.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className="p-4 border border-yellow-200 bg-yellow-50 rounded-xl shadow-sm"
+                  >
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <p className="font-semibold text-emerald-700">
+                          {booking.ride?.from_city} → {booking.ride?.to_city}
                         </p>
-                      ) : null}
-                      <p className="text-sm text-emerald-700 font-medium">
-                        {booking.ride?.price_eur} €
-                      </p>
+                        <p className="text-sm text-neutral-600">{formattedDeparture}</p>
+                        <p className="text-sm text-neutral-600">
+                          {t.riderLabel}: {booking.rider?.name ?? booking.user_email}
+                        </p>
+                        {booking.rider?.driverRating ? (
+                          <p className="text-xs text-neutral-500 mt-1">
+                            {t.driverRating}: {booking.rider.driverRating} ⭐ ({booking.rider.driverRatingCount ?? 0})
+                          </p>
+                        ) : null}
+                        <p className="text-sm text-emerald-700 font-medium">
+                          {booking.ride?.price_eur} €
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => openRiderProfileModal(booking.rider, booking.user_email ?? "")}
+                        className="text-sm font-medium text-emerald-600 hover:text-emerald-700 hover:underline transition"
+                      >
+                        {t.viewProfile}
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleBookingResponse(booking.id, "accept")}
+                        className="flex-1 px-3 py-2 bg-emerald-500 text-white rounded-lg font-medium hover:bg-emerald-600 transition text-sm"
+                      >
+                        {t.accept}
+                      </button>
+                      <button
+                        onClick={() => handleBookingResponse(booking.id, "reject")}
+                        className="flex-1 px-3 py-2 bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 transition text-sm"
+                      >
+                        {t.reject}
+                      </button>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <section className="mt-10">
+          <h2 className="text-xl font-semibold text-emerald-700 mb-4">{t.messages}</h2>
+          {isLoadingConversations ? (
+            <p className="text-neutral-600">{t.chatLoading}</p>
+          ) : conversations.length === 0 ? (
+            <p className="text-neutral-600">{t.noMessages}</p>
+          ) : (
+            <div className="space-y-4">
+              {conversations.map((conversation) => {
+                const partnerName = conversation.partner?.name || conversation.partner?.email || t.unknownUser;
+                const partnerInitial = partnerName.trim().charAt(0) || "?";
+                const lastMessage = conversation.lastMessage;
+                const lastMessagePreview = lastMessage
+                  ? `${lastMessage.senderId === currentUserId ? `${t.chatYou}: ` : ""}${lastMessage.content}`
+                  : t.chatEmpty;
+                const timestamp = formatMessageTimestamp(
+                  lastMessage?.createdAt ?? conversation.updatedAt ?? conversation.createdAt ?? null
+                );
+                return (
+                  <motion.div
+                    key={conversation.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="flex flex-col gap-3 rounded-xl border border-emerald-100 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between"
+                  >
+                    <div className="flex items-start gap-3">
+                      {conversation.partner?.profilePictureData ? (
+                        <Image
+                          src={conversation.partner.profilePictureData}
+                          alt={getProfileAltText(
+                            conversation.partner?.name,
+                            conversation.partner?.email,
+                            partnerName
+                          )}
+                          width={48}
+                          height={48}
+                          unoptimized
+                          className="h-12 w-12 rounded-full border border-emerald-100 object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-lg font-semibold text-emerald-700">
+                          {partnerInitial.toUpperCase()}
+                        </div>
+                      )}
+                      <div>
+                        {timestamp ? (
+                          <p className="text-xs uppercase tracking-wide text-neutral-400">{timestamp}</p>
+                        ) : null}
+                        <h3 className="text-base font-semibold text-emerald-700">{partnerName}</h3>
+                        {conversation.ride?.from_city && conversation.ride?.to_city ? (
+                          <p className="text-sm text-neutral-600">
+                            {conversation.ride.from_city} → {conversation.ride.to_city}
+                          </p>
+                        ) : null}
+                        <p className="mt-1 max-w-md truncate text-sm text-neutral-600">{lastMessagePreview}</p>
+                      </div>
                     </div>
                     <button
-                      onClick={() => openRiderProfileModal(booking.rider, booking.user_email)}
-                      className="text-sm font-medium text-emerald-600 hover:text-emerald-700 hover:underline transition"
+                      onClick={() => handleOpenChatFromList(conversation)}
+                      className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600"
                     >
-                      {t.viewProfile}
+                      {t.chatOpen}
                     </button>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleBookingResponse(booking.id, "accept")}
-                      className="flex-1 px-3 py-2 bg-emerald-500 text-white rounded-lg font-medium hover:bg-emerald-600 transition text-sm"
-                    >
-                      {t.accept}
-                    </button>
-                    <button
-                      onClick={() => handleBookingResponse(booking.id, "reject")}
-                      className="flex-1 px-3 py-2 bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 transition text-sm"
-                    >
-                      {t.reject}
-                    </button>
-                  </div>
-                </motion.div>
-              ))}
+                  </motion.div>
+                );
+              })}
             </div>
           )}
         </section>
@@ -854,9 +1344,16 @@ export default function ProfilePage() {
             <h2 className="text-lg font-semibold text-emerald-700 mb-4 text-center">{t.riderProfileTitle}</h2>
             <div className="flex flex-col items-center text-center">
               {selectedRiderProfile.profilePictureData ? (
-                <img
+                <Image
                   src={selectedRiderProfile.profilePictureData}
-                  alt={selectedRiderProfile.name ?? selectedRiderProfile.email}
+                  alt={getProfileAltText(
+                    selectedRiderProfile.name,
+                    selectedRiderProfile.email,
+                    t.riderProfileTitle
+                  )}
+                  width={112}
+                  height={112}
+                  unoptimized
                   className="w-28 h-28 rounded-full object-cover border-4 border-emerald-200 shadow-md"
                 />
               ) : (
@@ -895,6 +1392,125 @@ export default function ProfilePage() {
           </motion.div>
         </div>
       )}
+
+      <AnimatePresence>
+        {activeChat && (
+          <motion.div
+            key="chat-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+            onClick={handleCloseChat}
+          >
+            <motion.div
+              key={activeChat.conversationId}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              transition={{ duration: 0.2 }}
+              className="relative w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start gap-3 border-b border-neutral-100 px-6 py-4">
+                {activeChat.partnerPicture ? (
+                  <Image
+                    src={activeChat.partnerPicture}
+                    alt={getProfileAltText(activeChat.partnerName, activeChat.partnerEmail, activeChat.partnerName)}
+                    width={48}
+                    height={48}
+                    unoptimized
+                    className="h-12 w-12 rounded-full border border-emerald-100 object-cover"
+                  />
+                ) : (
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-lg font-semibold text-emerald-700">
+                    {activeChat.partnerName.trim().charAt(0).toUpperCase() || "?"}
+                  </div>
+                )}
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-emerald-700">{activeChat.partnerName}</h3>
+                  {activeChat.partnerEmail ? (
+                    <p className="text-sm text-neutral-500">{activeChat.partnerEmail}</p>
+                  ) : null}
+                  {activeConversationDetails?.ride?.from_city && activeConversationDetails?.ride?.to_city ? (
+                    <p className="text-sm text-neutral-500">
+                      {activeConversationDetails.ride.from_city} → {activeConversationDetails.ride.to_city}
+                    </p>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCloseChat}
+                  className="ml-2 rounded-full p-1 text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-600"
+                  aria-label={t.close}
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="flex max-h-96 flex-col gap-3 overflow-y-auto px-6 py-4">
+                {isChatLoading ? (
+                  <p className="text-sm text-neutral-500">{t.chatLoading}</p>
+                ) : chatMessages.length === 0 ? (
+                  <p className="text-sm text-neutral-500">{t.chatEmpty}</p>
+                ) : (
+                  chatMessages.map((message) => {
+                    const isOwnMessage = message.senderId === currentUserId;
+                    return (
+                      <div
+                        key={message.id}
+                        className={`flex ${isOwnMessage ? "justify-end" : "justify-start"}`}
+                      >
+                        <div
+                          className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
+                            isOwnMessage
+                              ? "bg-emerald-500 text-white"
+                              : "bg-neutral-100 text-neutral-800"
+                          }`}
+                        >
+                          <p className="whitespace-pre-wrap">{message.content}</p>
+                          <p
+                            className={`mt-1 text-[11px] ${
+                              isOwnMessage ? "text-emerald-50/80" : "text-neutral-500"
+                            }`}
+                          >
+                            {formatMessageTimestamp(message.createdAt)}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+                <div ref={chatMessagesEndRef} />
+              </div>
+
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleSendChatMessage();
+                }}
+                className="flex items-end gap-3 border-t border-neutral-100 px-6 py-4"
+              >
+                <textarea
+                  value={chatInput}
+                  onChange={(event) => setChatInput(event.target.value)}
+                  placeholder={t.chatPlaceholder}
+                  rows={2}
+                  className="flex-1 resize-none rounded-xl border border-neutral-200 px-3 py-2 text-sm text-neutral-700 focus:border-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-200 disabled:opacity-60"
+                  disabled={isSendingChat}
+                />
+                <button
+                  type="submit"
+                  className="inline-flex items-center justify-center rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={isSendingChat || !chatInput.trim()}
+                >
+                  {t.chatSend}
+                </button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {notificationMessage && (
         <motion.div

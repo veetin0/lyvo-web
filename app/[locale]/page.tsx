@@ -2,11 +2,17 @@
 
 import Link from "next/link";
 import { motion, useAnimation } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import SplitText from "@/components/SplitText";
-import GlareHover from "@/components/GlareHover";
 import Header from "@/components/header";
+import { Sora } from "next/font/google";
+
+const heroFont = Sora({
+  subsets: ["latin"],
+  weight: ["600", "700"],
+  variable: "--font-hero",
+});
 
 const translations = {
   fi: {
@@ -116,59 +122,48 @@ export default function Home() {
   const t = translations[locale] || translations.en;
   
   const mainControls = useAnimation();
-  const btn1Ref = useRef<HTMLDivElement>(null);
-  const btn2Ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     mainControls.start({ opacity: 1, y: 0 });
   }, [mainControls]);
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
-    const target = e.currentTarget;
-    const rect = target.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    target.style.setProperty("--x", `${x}px`);
-    target.style.setProperty("--y", `${y}px`);
-  };
-
   return (
     <>
       <Header />
       {/* Background gradient */}
-      <div className="fixed inset-0 -z-20 bg-gradient-to-b from-white via-[#f8fffa] to-white" />
+  <div className="fixed inset-0 -z-20 bg-gradient-to-b from-white via-[#f7fff9] to-white" />
       
       {/* Persistent background orbs */}
       <div className="fixed inset-0 -z-10 pointer-events-none" style={{ overflow: 'hidden' }}>
         {/* Orb 1 - Top Left */}
-        <div 
-          className="absolute w-[600px] h-[600px] rounded-full blur-3xl"
+        <div
+          className="absolute w-[600px] h-[600px] rounded-full blur-[110px]"
           style={{
-            top: '-200px',
-            left: '-100px',
-            background: 'radial-gradient(circle at 30% 30%, rgba(33, 165, 63, 0.5) 0%, rgba(33, 165, 63, 0.15) 40%, transparent 70%)',
+            top: '-220px',
+            left: '-120px',
+            background: 'radial-gradient(circle at 30% 30%, rgba(33, 165, 63, 0.35) 0%, rgba(33, 165, 63, 0.08) 45%, transparent 75%)',
             willChange: 'transform',
           }}
         />
         
         {/* Orb 2 - Top Right */}
-        <div 
-          className="absolute w-[700px] h-[700px] rounded-full blur-3xl"
+        <div
+          className="absolute w-[700px] h-[700px] rounded-full blur-[120px]"
           style={{
-            top: '0px',
-            right: '-150px',
-            background: 'radial-gradient(circle at 40% 50%, rgba(45, 207, 87, 0.4) 0%, rgba(45, 207, 87, 0.1) 40%, transparent 70%)',
+            top: '-40px',
+            right: '-180px',
+            background: 'radial-gradient(circle at 40% 50%, rgba(45, 207, 87, 0.28) 0%, rgba(45, 207, 87, 0.08) 42%, transparent 75%)',
             willChange: 'transform',
           }}
         />
         
         {/* Orb 3 - Bottom Left */}
-        <div 
-          className="absolute w-[800px] h-[800px] rounded-full blur-3xl"
+        <div
+          className="absolute w-[820px] h-[820px] rounded-full blur-[130px]"
           style={{
-            bottom: '-300px',
-            left: '0px',
-            background: 'radial-gradient(circle at 50% 50%, rgba(37, 180, 74, 0.45) 0%, rgba(37, 180, 74, 0.1) 40%, transparent 70%)',
+            bottom: '-320px',
+            left: '-40px',
+            background: 'radial-gradient(circle at 50% 50%, rgba(37, 180, 74, 0.3) 0%, rgba(37, 180, 74, 0.08) 45%, transparent 78%)',
             willChange: 'transform',
           }}
         />
@@ -178,7 +173,7 @@ export default function Home() {
         initial={{ opacity: 0, y: 10 }}
         animate={mainControls}
         transition={{ duration: 0.8, ease: "easeOut" }}
-        className="relative flex flex-col items-center justify-center min-h-screen overflow-hidden pt-32 text-center px-4"
+        className={`relative flex flex-col items-center justify-center min-h-screen overflow-hidden pt-32 text-center px-4 ${heroFont.variable}`}
       >
 
       {/* Hero-tekstit */}
@@ -186,7 +181,7 @@ export default function Home() {
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8, ease: "easeOut" }}
-        className="text-6xl md:text-7xl font-extrabold tracking-tight text-shade-800 drop-shadow-sm"
+        className="font-hero text-5xl md:text-7xl font-extrabold tracking-tight leading-tight text-shade-800 drop-shadow-sm"
       >
         {t.title}
       </motion.h1>
@@ -195,7 +190,7 @@ export default function Home() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3, duration: 0.8 }}
-        className="mt-5 text-lg text-neutral-700 max-w-2xl mx-auto"
+        className="mt-5 text-lg text-neutral-700 max-w-xl mx-auto"
       >
         {t.subtitle}
       </motion.p>
@@ -212,7 +207,6 @@ export default function Home() {
         threshold={0.1}
         rootMargin="-100px"
         textAlign="center"
-        onLetterAnimationComplete={() => console.log('Animaatio valmis!')}
       />
 
       {/* Painikkeet */}
@@ -220,11 +214,11 @@ export default function Home() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.6, duration: 0.8 }}
-        className="mt-10 flex justify-center gap-8"
+        className="mt-12 flex flex-wrap justify-center gap-4 md:gap-6"
       >
         <Link
           href={`/${locale}/rides`}
-          className="relative px-8 py-4 bg-[#21a53f] text-white font-semibold rounded-xl shadow-md overflow-hidden transition-all duration-300 hover:scale-105 hover:shadow-lg group"
+          className="relative px-6 py-3 md:px-8 md:py-4 bg-[#1f9e3b] text-white font-semibold rounded-full shadow-[0_18px_40px_-18px_rgba(33,165,63,0.8)] overflow-hidden transition-transform duration-300 hover:-translate-y-0.5 group"
         >
           <span className="absolute inset-0 bg-[#25b44a] translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-300 ease-out opacity-30" />
           <span className="relative z-10">{t.findRide}</span>
@@ -232,7 +226,7 @@ export default function Home() {
 
         <Link
           href={`/${locale}/rides/new`}
-          className="relative px-8 py-4 bg-white text-[#1e9239] font-semibold rounded-xl shadow-md border border-[#c2edca] overflow-hidden transition-all duration-300 hover:scale-105 hover:shadow-lg group"
+          className="relative px-6 py-3 md:px-8 md:py-4 bg-white text-[#1e9239] font-semibold rounded-full shadow-[0_18px_40px_-18px_rgba(33,165,63,0.35)] border border-[#c2edca] overflow-hidden transition-transform duration-300 hover:-translate-y-0.5 group"
         >
           <span className="absolute inset-0 bg-[#eaf8ec] translate-x-[100%] group-hover:translate-x-0 transition-transform duration-300 ease-out opacity-50" />
           <span className="relative z-10">{t.shareRide}</span>
@@ -246,17 +240,17 @@ export default function Home() {
         transition={{ delay: 0.9, duration: 0.8 }}
         className="mt-24 grid md:grid-cols-3 gap-6 container-max"
       >
-        <div className="card p-6 text-left hover:shadow-lg hover:-translate-y-1 transition">
+        <div className="card p-6 text-left rounded-3xl border border-[#c2edca]/60 bg-white/80 backdrop-blur hover:shadow-xl hover:-translate-y-1 transition-all">
           <h3 className="text-xl font-semibold text-[#1e9239] mb-2">
             {t.ecological}
           </h3>
           <p>{t.ecologicalDesc}</p>
         </div>
-        <div className="card p-6 text-left hover:shadow-lg hover:-translate-y-1 transition">
+        <div className="card p-6 text-left rounded-3xl border border-[#c2edca]/60 bg-white/80 backdrop-blur hover:shadow-xl hover:-translate-y-1 transition-all">
           <h3 className="text-xl font-semibold text-[#1e9239] mb-2">{t.easy}</h3>
           <p>{t.easyDesc}</p>
         </div>
-        <div className="card p-6 text-left hover:shadow-lg hover:-translate-y-1 transition">
+        <div className="card p-6 text-left rounded-3xl border border-[#c2edca]/60 bg-white/80 backdrop-blur hover:shadow-xl hover:-translate-y-1 transition-all">
           <h3 className="text-xl font-semibold text-[#1e9239] mb-2">{t.community}</h3>
           <p>{t.communityDesc}</p>
         </div>
@@ -286,7 +280,7 @@ export default function Home() {
         </div>
       </motion.section>
 
-      {/* Shade numeroina */}
+      {/* Lyvo numeroina */}
       <motion.section
         initial={{ opacity: 0, y: 30 }}
         whileInView={{ opacity: 1, y: 0 }}
@@ -339,7 +333,7 @@ export default function Home() {
               viewport={{ once: true, amount: 0.3 }}
               className="bg-[#eaf8ec]/70 backdrop-blur-lg border border-[#c2edca] rounded-2xl p-6 shadow-md hover:shadow-lg transition"
             >
-              <p className="italic text-neutral-700 mb-4">"{item.text}"</p>
+              <p className="italic text-neutral-700 mb-4">&ldquo;{item.text}&rdquo;</p>
               <p className="font-semibold text-[#1e9239]">{item.name}</p>
             </motion.div>
           ))}
@@ -427,11 +421,11 @@ export default function Home() {
         viewport={{ once: true, amount: 0.3 }}
         className="mt-32 py-16 bg-gradient-to-r from-[#21a53f] to-[#2dcf57] text-white text-center rounded-2xl shadow-lg mx-4 md:mx-auto max-w-5xl"
       >
-        <h2 className="text-3xl font-bold mb-4">{t.ctaTitle}</h2>
-        <p className="mb-8 text-lg">{t.ctaDesc}</p>
+  <h2 className="text-3xl font-bold mb-4 max-w-2xl mx-auto leading-tight px-4 sm:px-6">{t.ctaTitle}</h2>
+  <p className="mb-8 text-lg max-w-xl mx-auto leading-relaxed px-4 sm:px-6">{t.ctaDesc}</p>
         <Link
           href={`/${locale}/rides`}
-          className="bg-white text-[#1e9239] px-8 py-4 font-semibold rounded-xl shadow-md hover:scale-105 hover:shadow-lg transition-transform duration-300 inline-block"
+          className="bg-white text-[#1e9239] px-8 py-4 font-semibold rounded-full shadow-md hover:scale-105 hover:shadow-lg transition-transform duration-300 inline-block"
         >
           {t.ctaButton}
         </Link>

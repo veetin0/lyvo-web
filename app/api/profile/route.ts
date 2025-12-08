@@ -1,6 +1,22 @@
 import { NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
+import type { JWT } from "next-auth/jwt";
+import type { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+
+type AuthToken = (JWT & { id?: string | null; email?: string | null }) | null;
+
+interface UserProfileRow {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  bio?: string | null;
+  profile_picture_data?: string | null;
+}
+
+interface RideRatingRow {
+  driver_rating?: number | null;
+}
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -9,7 +25,7 @@ const supabase = createClient(
 
 export async function GET(req: Request): Promise<NextResponse> {
   try {
-    const token = await getToken({ req: req as any });
+    const token = (await getToken({ req: req as unknown as NextRequest })) as AuthToken;
     if (!token) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -19,13 +35,13 @@ export async function GET(req: Request): Promise<NextResponse> {
     const requestedUserId = searchParams.get("userId");
 
     const identifierField = requestedEmail ? "email" : "id";
-    const identifierValue = requestedEmail ?? requestedUserId ?? (token as any).id ?? token.email;
+    const identifierValue = requestedEmail ?? requestedUserId ?? token.id ?? token.email;
 
     if (!identifierValue) {
       return NextResponse.json({ error: "Profile identifier missing" }, { status: 400 });
     }
 
-    const { data: userRow, error: userError } = await supabase
+    const { data: userResult, error: userError } = await supabase
       .from("User")
       .select("id, name, email, bio, profile_picture_data")
       .eq(identifierField, identifierValue)
@@ -39,6 +55,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       return NextResponse.json({ error: userError.message }, { status: 500 });
     }
 
+  const userRow = userResult as UserProfileRow;
     let driverRating: number | null = null;
     let driverRatingCount = 0;
 
@@ -51,8 +68,8 @@ export async function GET(req: Request): Promise<NextResponse> {
 
       if (!ratingError && Array.isArray(ratingRows)) {
         const rated = ratingRows
-          .map((row: any) => row?.driver_rating)
-          .filter((value: any) => typeof value === "number" && Number.isFinite(value) && value > 0);
+          .map((row) => (row as RideRatingRow).driver_rating)
+          .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
 
         if (rated.length > 0) {
           const total = rated.reduce((acc: number, value: number) => acc + value, 0);
@@ -79,18 +96,17 @@ export async function GET(req: Request): Promise<NextResponse> {
 
 export async function PUT(req: Request): Promise<NextResponse> {
   try {
-    const token = await getToken({ req: req as any });
+    const token = (await getToken({ req: req as unknown as NextRequest })) as AuthToken;
     if (!token?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await req.json();
-    const { bio, profilePictureData } = body as {
+    const { bio, profilePictureData } = (await req.json()) as {
       bio?: string | null;
       profilePictureData?: string | null;
     };
 
-    const updates: Record<string, any> = {};
+    const updates: Partial<{ bio: string | null; profile_picture_data: string | null }> = {};
 
     if (typeof bio === "string") {
       const trimmedBio = bio.trim();
@@ -112,7 +128,7 @@ export async function PUT(req: Request): Promise<NextResponse> {
     const { error: updateError } = await supabase
       .from("User")
       .update(updates)
-      .eq("id", (token as any).id)
+      .eq("id", token.id)
       .select("id")
       .single();
 

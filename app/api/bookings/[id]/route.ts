@@ -2,22 +2,143 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { createClient } from "@supabase/supabase-js";
+import type { JWT } from "next-auth/jwt";
 
-export async function PUT(req: NextRequest, context: any): Promise<NextResponse> {
+type AuthToken = (JWT & { id?: string | null; email?: string | null }) | null;
+
+interface BookingWithRideOwner {
+  id: string;
+  ride_id?: string | null;
+  status: string;
+  ride?: {
+    id: string;
+    owner?: string | null;
+  } | null;
+}
+
+interface RideSeatInfo {
+  seats?: number | null;
+}
+
+interface BookingWithRideSeats {
+  id: string;
+  user_email?: string | null;
+  status: string;
+  ride_id?: string | null;
+  ride?: {
+    id: string;
+    seats?: number | null;
+  } | null;
+}
+
+interface UpdateBookingBody {
+  bookingId?: string;
+  action?: "accept" | "reject";
+}
+
+const getAuthToken = async (req: NextRequest): Promise<AuthToken> =>
+  (await getToken({ req })) as AuthToken;
+
+const parseBookingWithRideOwner = (data: unknown): BookingWithRideOwner | null => {
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+
+  const record = data as Record<string, unknown>;
+  const id = typeof record.id === "string" ? record.id : null;
+  const status = typeof record.status === "string" ? record.status : null;
+
+  if (!id || !status) {
+    return null;
+  }
+
+  const rideId = typeof record.ride_id === "string" ? record.ride_id : null;
+  const rideRaw = record.ride;
+
+  let ride: BookingWithRideOwner["ride"] = null;
+  if (rideRaw && typeof rideRaw === "object") {
+    const rideRecord = rideRaw as Record<string, unknown>;
+    const nestedRideId = typeof rideRecord.id === "string" ? rideRecord.id : null;
+    if (nestedRideId) {
+      ride = {
+        id: nestedRideId,
+        owner: typeof rideRecord.owner === "string" ? rideRecord.owner : null,
+      };
+    }
+  }
+
+  return {
+    id,
+    ride_id: rideId,
+    status,
+    ride,
+  };
+};
+
+const parseRideSeatInfo = (data: unknown): RideSeatInfo | null => {
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+  const record = data as Record<string, unknown>;
+  const seats = typeof record.seats === "number" ? record.seats : null;
+  return { seats };
+};
+
+const parseBookingWithRideSeats = (data: unknown): BookingWithRideSeats | null => {
+  if (!data || typeof data !== "object") {
+    return null;
+  }
+  const record = data as Record<string, unknown>;
+  const id = typeof record.id === "string" ? record.id : null;
+  if (!id) {
+    return null;
+  }
+
+  const rideId = typeof record.ride_id === "string" ? record.ride_id : null;
+  const status = typeof record.status === "string" ? record.status : "";
+  const userEmail = typeof record.user_email === "string" ? record.user_email : null;
+
+  let ride: BookingWithRideSeats["ride"] = null;
+  const rideRaw = record.ride;
+  if (rideRaw && typeof rideRaw === "object") {
+    const rideRecord = rideRaw as Record<string, unknown>;
+    const nestedRideId = typeof rideRecord.id === "string" ? rideRecord.id : null;
+    if (nestedRideId) {
+      ride = {
+        id: nestedRideId,
+        seats: typeof rideRecord.seats === "number" ? rideRecord.seats : null,
+      };
+    }
+  }
+
+  return {
+    id,
+    user_email: userEmail,
+    status,
+    ride_id: rideId,
+    ride,
+  };
+};
+
+export async function PUT(
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
   try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    const token = await getToken({ req: req as any });
+    const token = await getAuthToken(req);
     if (!token?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-  const { bookingId: bodyBookingId, action } = await req.json();
-    const { params } = context as { params: { id: string } };
-    const bookingId = bodyBookingId ?? params.id;
+  const payload = (await req.json()) as UpdateBookingBody;
+  const params = await context.params;
+  const bookingId = payload.bookingId ?? params.id;
+    const action = payload.action;
 
     if (!bookingId || !action) {
       return NextResponse.json({ error: "Missing bookingId or action" }, { status: 400 });
@@ -28,7 +149,7 @@ export async function PUT(req: NextRequest, context: any): Promise<NextResponse>
     }
 
     // Get the booking and verify it belongs to a ride owned by the current user
-    const { data: booking, error: bookingError } = await supabase
+    const { data: bookingData, error: bookingError } = await supabase
       .from("bookings")
       .select(`
         id,
@@ -42,12 +163,14 @@ export async function PUT(req: NextRequest, context: any): Promise<NextResponse>
       .eq("id", bookingId)
       .single();
 
+    const booking = parseBookingWithRideOwner(bookingData);
+
     if (bookingError || !booking) {
       return NextResponse.json({ error: "Booking not found" }, { status: 404 });
     }
 
     // Verify the current user is the ride owner
-    const rideData = (booking as any).ride;
+    const rideData = booking.ride ?? null;
     if (!rideData || rideData.owner !== token.id) {
       return NextResponse.json({ error: "Not authorized" }, { status: 403 });
     }
@@ -64,17 +187,21 @@ export async function PUT(req: NextRequest, context: any): Promise<NextResponse>
     }
 
     if (action === "reject") {
-      const { data: ride } = await supabase
-        .from("rides")
-        .select("seats")
-        .eq("id", (booking as any).ride_id)
-        .single();
-
-      if (ride && typeof ride.seats === "number") {
-        await supabase
+      if (booking.ride_id) {
+        const { data: rideData } = await supabase
           .from("rides")
-          .update({ seats: ride.seats + 1 })
-          .eq("id", (booking as any).ride_id);
+          .select("seats")
+          .eq("id", booking.ride_id)
+          .single();
+
+        const ride = parseRideSeatInfo(rideData);
+
+        if (ride && typeof ride.seats === "number") {
+          await supabase
+            .from("rides")
+            .update({ seats: ride.seats + 1 })
+            .eq("id", booking.ride_id);
+        }
       }
     }
 
@@ -85,25 +212,27 @@ export async function PUT(req: NextRequest, context: any): Promise<NextResponse>
   }
 }
 
-export async function DELETE(req: NextRequest, context: any): Promise<NextResponse> {
+export async function DELETE(
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
   try {
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    const token = await getToken({ req: req as any });
+    const token = await getAuthToken(req);
     if (!token?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-  const { params } = context as { params: { id: string } };
-  const bookingId = params.id;
+  const { id: bookingId } = await context.params;
     if (!bookingId) {
       return NextResponse.json({ error: "Missing booking id" }, { status: 400 });
     }
 
-    const { data: booking, error: bookingError } = await supabase
+    const { data: bookingData, error: bookingError } = await supabase
       .from("bookings")
       .select(
         `id, user_email, status, ride_id, ride:ride_id ( id, seats )`
@@ -111,19 +240,20 @@ export async function DELETE(req: NextRequest, context: any): Promise<NextRespon
       .eq("id", bookingId)
       .single();
 
+    const booking = parseBookingWithRideSeats(bookingData);
+
     if (bookingError || !booking) {
       return NextResponse.json({ error: "Booking not found" }, { status: 404 });
     }
 
-    if (booking.user_email !== token.email) {
+    if (!booking.user_email || booking.user_email !== token.email) {
       return NextResponse.json({ error: "Not authorized" }, { status: 403 });
     }
 
-    const rideData = (booking as any).ride;
-    if (rideData && typeof rideData.seats === "number") {
+    if (booking.ride && typeof booking.ride.seats === "number" && booking.ride_id) {
       await supabase
         .from("rides")
-        .update({ seats: rideData.seats + 1 })
+        .update({ seats: booking.ride.seats + 1 })
         .eq("id", booking.ride_id);
     }
 

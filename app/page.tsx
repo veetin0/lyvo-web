@@ -2,64 +2,59 @@
 
 import Link from "next/link";
 import { motion, useAnimation } from "framer-motion";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import SplitText from "@/components/SplitText";
-import GlareHover from "@/components/GlareHover";
+import { Sora } from "next/font/google";
+
+const heroFont = Sora({
+  subsets: ["latin"],
+  weight: ["600", "700"],
+  variable: "--font-hero",
+});
 
 export default function Home() {
   const mainControls = useAnimation();
-  const btn1Ref = useRef<HTMLDivElement>(null);
-  const btn2Ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     mainControls.start({ opacity: 1, y: 0 });
   }, [mainControls]);
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
-    const target = e.currentTarget;
-    const rect = target.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    target.style.setProperty("--x", `${x}px`);
-    target.style.setProperty("--y", `${y}px`);
-  };
-
   return (
     <>
       {/* Background gradient */}
-      <div className="fixed inset-0 -z-20 bg-gradient-to-b from-white via-[#f8fffa] to-white" />
+  <div className="fixed inset-0 -z-20 bg-gradient-to-b from-white via-[#f7fff9] to-white" />
       
       {/* Persistent background orbs */}
       <div className="fixed inset-0 -z-10 pointer-events-none" style={{ overflow: 'hidden' }}>
         {/* Orb 1 - Top Left */}
-        <div 
-          className="absolute w-[600px] h-[600px] rounded-full blur-3xl"
+        <div
+          className="absolute w-[600px] h-[600px] rounded-full blur-[110px]"
           style={{
-            top: '-200px',
-            left: '-100px',
-            background: 'radial-gradient(circle at 30% 30%, rgba(33, 165, 63, 0.5) 0%, rgba(33, 165, 63, 0.15) 40%, transparent 70%)',
+            top: '-220px',
+            left: '-120px',
+            background: 'radial-gradient(circle at 30% 30%, rgba(33, 165, 63, 0.35) 0%, rgba(33, 165, 63, 0.08) 45%, transparent 75%)',
             willChange: 'transform',
           }}
         />
         
         {/* Orb 2 - Top Right */}
-        <div 
-          className="absolute w-[700px] h-[700px] rounded-full blur-3xl"
+        <div
+          className="absolute w-[700px] h-[700px] rounded-full blur-[120px]"
           style={{
-            top: '0px',
-            right: '-150px',
-            background: 'radial-gradient(circle at 40% 50%, rgba(45, 207, 87, 0.4) 0%, rgba(45, 207, 87, 0.1) 40%, transparent 70%)',
+            top: '-40px',
+            right: '-180px',
+            background: 'radial-gradient(circle at 40% 50%, rgba(45, 207, 87, 0.28) 0%, rgba(45, 207, 87, 0.08) 42%, transparent 75%)',
             willChange: 'transform',
           }}
         />
         
         {/* Orb 3 - Bottom Left */}
-        <div 
-          className="absolute w-[800px] h-[800px] rounded-full blur-3xl"
+        <div
+          className="absolute w-[820px] h-[820px] rounded-full blur-[130px]"
           style={{
-            bottom: '-300px',
-            left: '0px',
-            background: 'radial-gradient(circle at 50% 50%, rgba(37, 180, 74, 0.45) 0%, rgba(37, 180, 74, 0.1) 40%, transparent 70%)',
+            bottom: '-320px',
+            left: '-40px',
+            background: 'radial-gradient(circle at 50% 50%, rgba(37, 180, 74, 0.3) 0%, rgba(37, 180, 74, 0.08) 45%, transparent 78%)',
             willChange: 'transform',
           }}
         />
@@ -69,7 +64,7 @@ export default function Home() {
         initial={{ opacity: 0, y: 10 }}
         animate={mainControls}
         transition={{ duration: 0.8, ease: "easeOut" }}
-        className="relative flex flex-col items-center justify-center min-h-screen overflow-hidden pt-32 text-center px-4"
+        className={`relative flex flex-col items-center justify-center min-h-screen overflow-hidden pt-32 text-center px-4 ${heroFont.variable}`}
       >
 
       {/* Hero-tekstit */}
@@ -77,7 +72,7 @@ export default function Home() {
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8, ease: "easeOut" }}
-        className="text-6xl md:text-7xl font-extrabold tracking-tight text-shade-800 drop-shadow-sm"
+        className="font-hero text-6xl md:text-7xl font-extrabold tracking-tight text-shade-800 drop-shadow-sm"
       >
         Lyvo
       </motion.h1>
@@ -103,7 +98,6 @@ export default function Home() {
         threshold={0.1}
         rootMargin="-100px"
         textAlign="center"
-        onLetterAnimationComplete={() => console.log('Animaatio valmis!')}
       />
 
       {/* Painikkeet */}
@@ -137,17 +131,17 @@ export default function Home() {
         transition={{ delay: 0.9, duration: 0.8 }}
         className="mt-24 grid md:grid-cols-3 gap-6 container-max"
       >
-        <div className="card p-6 text-left hover:shadow-lg hover:-translate-y-1 transition">
+        <div className="card p-6 text-left rounded-3xl border border-[#c2edca]/60 bg-white/80 backdrop-blur hover:shadow-xl hover:-translate-y-1 transition-all">
           <h3 className="text-xl font-semibold text-[#1e9239] mb-2">
             Ekologinen
           </h3>
           <p>Säästä päästöjä ja matkusta yhdessä – jokainen kyyti tekee hyvää luonnolle.</p>
         </div>
-        <div className="card p-6 text-left hover:shadow-lg hover:-translate-y-1 transition">
+        <div className="card p-6 text-left rounded-3xl border border-[#c2edca]/60 bg-white/80 backdrop-blur hover:shadow-xl hover:-translate-y-1 transition-all">
           <h3 className="text-xl font-semibold text-[#1e9239] mb-2">Helppo</h3>
           <p>Löydä kyyti hetkessä intuitiivisella hakutoiminnolla. Käytä mobiilissa tai webissä.</p>
         </div>
-        <div className="card p-6 text-left hover:shadow-lg hover:-translate-y-1 transition">
+        <div className="card p-6 text-left rounded-3xl border border-[#c2edca]/60 bg-white/80 backdrop-blur hover:shadow-xl hover:-translate-y-1 transition-all">
           <h3 className="text-xl font-semibold text-[#1e9239] mb-2">Yhteisöllinen</h3>
           <p>Tee matkoista mukavampia – tapaa muita opiskelijoita ja matkustajia turvallisesti.</p>
         </div>
@@ -314,13 +308,13 @@ export default function Home() {
         whileInView={{ opacity: 1 }}
         transition={{ duration: 1 }}
         viewport={{ once: true, amount: 0.3 }}
-        className="mt-32 py-16 bg-gradient-to-r from-[#21a53f] to-[#2dcf57] text-white text-center rounded-2xl shadow-lg mx-4 md:mx-auto max-w-5xl"
+          className="mt-32 py-16 bg-gradient-to-r from-[#21a53f] to-[#2dcf57] text-white text-center rounded-2xl shadow-lg mx-4 md:mx-auto max-w-5xl"
       >
-        <h2 className="text-3xl font-bold mb-4">Start sharing rides today</h2>
-        <p className="mb-8 text-lg">Join Lyvo and find a ride instantly – affordably and eco-friendly.</p>
+  <h2 className="text-3xl font-bold mb-4 max-w-2xl mx-auto leading-tight px-4 sm:px-6">Start sharing rides today</h2>
+  <p className="mb-8 text-lg max-w-xl mx-auto leading-relaxed px-4 sm:px-6">Join Lyvo and find a ride instantly – affordably and eco-friendly.</p>
         <Link
           href="/rides"
-          className="bg-white text-[#1e9239] px-8 py-4 font-semibold rounded-xl shadow-md hover:scale-105 hover:shadow-lg transition-transform duration-300 inline-block"
+          className="bg-white text-[#1e9239] px-8 py-4 font-semibold rounded-full shadow-md hover:scale-105 hover:shadow-lg transition-transform duration-300 inline-block"
         >
           Join now
         </Link>

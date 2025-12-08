@@ -22,10 +22,18 @@ export async function GET() {
     }
 
     return NextResponse.json({ ok: true, count: data?.length, data });
-  } catch (err: any) {
-    console.error("Virhe yhteydessä Supabaseen:", err.message);
+  } catch (err: unknown) {
+    if (err instanceof Error) {
+      console.error("Virhe yhteydessä Supabaseen:", err.message);
+      return NextResponse.json(
+        { ok: false, error: err.message },
+        { status: 500 }
+      );
+    }
+
+    console.error("Virhe yhteydessä Supabaseen:", err);
     return NextResponse.json(
-      { ok: false, error: err.message },
+      { ok: false, error: "Unknown error" },
       { status: 500 }
     );
   }

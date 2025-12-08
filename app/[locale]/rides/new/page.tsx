@@ -3,6 +3,7 @@
 
 import { useSession } from "next-auth/react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
@@ -122,15 +123,6 @@ const translations = {
   },
 };
 
-const cities = [
-  "Helsinki", "Espoo", "Vantaa", "Tampere", "Turku", "Oulu", "Jyväskylä", "Kuopio", "Lahti", "Pori",
-  "Joensuu", "Lappeenranta", "Vaasa", "Rovaniemi", "Seinäjoki", "Kokkola", "Kajaani", "Mikkeli",
-  "Tukholma", "Göteborg", "Malmö", "Uppsala", "Linköping", "Västerås", "Örebro",
-  "Oslo", "Bergen", "Trondheim", "Stavanger", "Drammen",
-  "Kööpenhamina", "Aarhus", "Odense", "Aalborg",
-  "Tallinna", "Riga", "Vilna", "Reykjavik", "Amsterdam", "Berlin", "Warszawa", "Praha", "Budapest"
-];
-
 const TOTAL_MAX_RATE_PER_KM = 0.15;
 
 const formatNumberForLocale = (value: number, locale: keyof typeof translations): string => {
@@ -138,6 +130,12 @@ const formatNumberForLocale = (value: number, locale: keyof typeof translations)
     return "0.00";
   }
   return value.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
+type SessionUser = {
+  id?: string | null;
+  name?: string | null;
+  email?: string | null;
 };
 
 export default function NewRide() {
@@ -151,6 +149,8 @@ export default function NewRide() {
   const router = useRouter();
   const { data: session, status } = useSession();
   const isLoggedIn = !!session;
+  const sessionUser = (session?.user as SessionUser | null) ?? null;
+  const sessionUserId = typeof sessionUser?.id === "string" ? sessionUser.id : null;
 
   const cityCountries: Record<string, string> = {
     Helsinki: "Finland", Espoo: "Finland", Vantaa: "Finland", Tampere: "Finland", Turku: "Finland",
@@ -275,22 +275,8 @@ export default function NewRide() {
   const [carBrand, setCarBrand] = useState("");
   const [carImage, setCarImage] = useState<string | null>(null);
 
-  // Kaupunkiehdotukset
-  const [fromSuggestions, setFromSuggestions] = useState<string[]>([]);
-  const [toSuggestions, setToSuggestions] = useState<string[]>([]);
-  const handleCityInput = (e: React.ChangeEvent<HTMLInputElement>, type: "from" | "to") => {
-    const value = e.target.value;
-    setRide({ ...ride, [type]: value });
-
-    const matches = cities.filter(city =>
-      city.toLowerCase().includes(value.toLowerCase())
-    );
-    if (type === "from") setFromSuggestions(matches);
-    else setToSuggestions(matches);
-  };
-
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value, type } = e.target;
+    const { name, value } = e.target;
     if (name === "seats") {
       setRide({ ...ride, seats: Number(value) });
     } else {
@@ -346,18 +332,7 @@ export default function NewRide() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Session:", session);
-    console.log("Lisäysdata:", {
-      owner: (session?.user as any)?.id,
-      from_city: ride.from,
-      to_city: ride.to,
-      departure: new Date(`${ride.date}T${ride.time}`).toISOString(),
-      seats: ride.seats,
-      price_eur: ride.price,
-      distance_meters: distanceMeters,
-      duration_seconds: durationSeconds,
-    });
-    if (!isLoggedIn || !session?.user) {
+    if (!isLoggedIn || !sessionUserId) {
       setNotificationType("error");
       setNotificationMessage("Kirjaudu ensin sisään lisätäksesi kyydin!");
       setShowNotification(true);
@@ -389,14 +364,14 @@ export default function NewRide() {
 
     const { error } = await supabase.from("rides").insert([
       {
-        owner: (session?.user as any)?.id,
+  owner: sessionUserId,
         from_city: ride.from,
         to_city: ride.to,
         departure: new Date(`${ride.date}T${ride.time}`).toISOString(),
         seats: ride.seats,
         price_eur: Number(ride.price),
         car: carBrand || null,
-        driver_name: (session.user as any)?.name || "Tuntematon",
+  driver_name: sessionUser?.name ?? "Tuntematon",
         driver_rating: 0,
         stops: JSON.stringify(stops),
   distance_meters: distanceMeters !== null ? Math.round(distanceMeters) : null,
@@ -955,7 +930,14 @@ export default function NewRide() {
               className="input mt-1"
             />
             {carImage && (
-              <img src={carImage} alt="Auton kuva" className="mt-3 w-full rounded-xl shadow-md" />
+              <Image
+                src={carImage}
+                alt={locale === "fi" ? "Auton kuva" : locale === "sv" ? "Bilbild" : "Car image"}
+                width={800}
+                height={450}
+                unoptimized
+                className="mt-3 w-full rounded-xl shadow-md h-auto"
+              />
             )}
           </div>
         </motion.div>

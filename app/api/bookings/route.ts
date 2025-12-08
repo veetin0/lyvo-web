@@ -1,6 +1,64 @@
 import { NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { createClient } from "@supabase/supabase-js";
+import type { JWT } from "next-auth/jwt";
+import type { NextRequest } from "next/server";
+
+interface RideSummaryRow {
+  id: string;
+  from_city?: string | null;
+  to_city?: string | null;
+  departure?: string | null;
+  price_eur?: number | null;
+  driver_name?: string | null;
+  owner?: string | null;
+  seats?: number | null;
+}
+
+interface BookingRow {
+  id: string;
+  created_at: string;
+  ride_id?: string | null;
+  status: string;
+  user_email?: string | null;
+  ride?: RideSummaryRow | null;
+}
+
+interface RiderProfileRow {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  bio?: string | null;
+  profile_picture_data?: string | null;
+}
+
+interface RiderProfileSummary {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  bio?: string | null;
+  profilePictureData?: string | null;
+  driverRating?: number | null;
+  driverRatingCount?: number | null;
+}
+
+type RiderProfilesByEmail = Record<string, RiderProfileSummary>;
+
+interface RideRatingRow {
+  owner?: string | null;
+  driver_rating?: number | null;
+}
+
+type AuthToken = (JWT & { id?: string | null; email?: string | null }) | null;
+
+const getAuthToken = async (req: Request): Promise<AuthToken> =>
+  (await getToken({ req: req as unknown as NextRequest })) as AuthToken;
+
+const debugLog = (...args: unknown[]) => {
+  if (process.env.NODE_ENV !== "test") {
+    console.log(...args);
+  }
+};
 
 // 📌 GET – Hae kirjautuneen käyttäjän varaukset
 export async function GET(req: Request): Promise<NextResponse> {
@@ -14,8 +72,8 @@ export async function GET(req: Request): Promise<NextResponse> {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    const token = await getToken({ req: req as any });
-    console.log("Token from request:", token);
+    const token = await getAuthToken(req);
+    debugLog("Token from request:", token);
 
     if (view === "owner") {
       if (!token?.id) {
@@ -34,7 +92,10 @@ export async function GET(req: Request): Promise<NextResponse> {
         return NextResponse.json({ error: ridesError.message }, { status: 500 });
       }
 
-      const rideIds = (userRides || []).map((ride: any) => ride.id);
+      const rideIdRows = Array.isArray(userRides) ? userRides : [];
+      const rideIds = rideIdRows
+        .map((ride) => (typeof ride === "object" && ride !== null && "id" in ride ? ride.id : null))
+        .filter((id): id is string => typeof id === "string" && id.length > 0);
       if (rideIds.length === 0) {
         return NextResponse.json([]);
       }
@@ -65,19 +126,21 @@ export async function GET(req: Request): Promise<NextResponse> {
         return NextResponse.json({ error: ownerError.message }, { status: 500 });
       }
 
-      const bookingsList = ownerBookings || [];
+        const bookingsList: BookingRow[] = Array.isArray(ownerBookings)
+          ? (ownerBookings as unknown as BookingRow[])
+          : [];
       const riderEmails = Array.from(
         new Set(
           bookingsList
-            .map((booking: any) => booking?.user_email)
-            .filter((email: any): email is string => typeof email === "string" && email.length > 0)
+              .map((booking) => booking.user_email ?? null)
+              .filter((email): email is string => typeof email === "string" && email.length > 0)
         )
       );
 
-      let riderProfilesByEmail: Record<string, any> = {};
+  const riderProfilesByEmail: RiderProfilesByEmail = {};
 
-      if (riderEmails.length > 0) {
-        const { data: riderProfiles, error: riderError } = await supabase
+        if (riderEmails.length > 0) {
+          const { data: riderProfiles, error: riderError } = await supabase
           .from("User")
           .select("id, name, email, bio, profile_picture_data")
           .in("email", riderEmails);
@@ -85,22 +148,26 @@ export async function GET(req: Request): Promise<NextResponse> {
         if (riderError) {
           console.error("Error fetching rider profiles:", riderError);
         } else if (Array.isArray(riderProfiles)) {
-          riderProfilesByEmail = riderProfiles.reduce((acc: Record<string, any>, profile: any) => {
-            if (profile?.email) {
-              acc[profile.email.toLowerCase()] = {
-                id: profile.id,
-                name: profile.name,
-                email: profile.email,
-                bio: profile.bio ?? "",
-                profilePictureData: profile.profile_picture_data ?? null,
+            const typedProfiles = riderProfiles as RiderProfileRow[];
+
+            for (const entry of typedProfiles) {
+              if (!entry.email) {
+                continue;
+              }
+              riderProfilesByEmail[entry.email.toLowerCase()] = {
+                id: entry.id,
+                name: entry.name ?? null,
+                email: entry.email ?? null,
+                bio: entry.bio ?? null,
+                profilePictureData: entry.profile_picture_data ?? null,
+                driverRating: null,
+                driverRatingCount: null,
               };
             }
-            return acc;
-          }, {});
 
-          const riderIds = riderProfiles
-            .map((profile: any) => profile?.id)
-            .filter((id: any): id is string => typeof id === "string" && id.length > 0);
+            const riderIds = typedProfiles
+              .map((profile) => profile.id)
+              .filter((id): id is string => typeof id === "string" && id.length > 0);
 
           if (riderIds.length > 0) {
             const { data: ratingRows, error: ratingError } = await supabase
@@ -114,19 +181,19 @@ export async function GET(req: Request): Promise<NextResponse> {
             } else if (Array.isArray(ratingRows)) {
               const ratingAccumulator = new Map<string, { total: number; count: number }>();
 
-              ratingRows.forEach((row: any) => {
-                const ownerId = row?.owner;
-                const ratingValue = row?.driver_rating;
+                for (const row of ratingRows as RideRatingRow[]) {
+                  const ownerId = row?.owner;
+                  const ratingValue = row?.driver_rating;
                 if (typeof ownerId === "string" && typeof ratingValue === "number" && ratingValue > 0) {
                   const current = ratingAccumulator.get(ownerId) ?? { total: 0, count: 0 };
                   ratingAccumulator.set(ownerId, {
                     total: current.total + ratingValue,
                     count: current.count + 1,
                   });
+                  }
                 }
-              });
 
-              for (const profile of riderProfiles) {
+                for (const profile of typedProfiles) {
                 const stats = ratingAccumulator.get(profile.id);
                 if (stats && stats.count > 0) {
                   const emailKey = profile.email?.toLowerCase();
@@ -144,16 +211,16 @@ export async function GET(req: Request): Promise<NextResponse> {
         }
       }
 
-      const enrichedBookings = bookingsList.map((booking: any) => {
-        const emailKey = booking?.user_email?.toLowerCase();
-        const riderProfile = emailKey ? riderProfilesByEmail[emailKey] ?? null : null;
+        const enrichedBookings = bookingsList.map((booking) => {
+          const emailKey = booking.user_email?.toLowerCase();
+          const riderProfile = emailKey ? riderProfilesByEmail[emailKey] ?? null : null;
         return {
           ...booking,
           rider: riderProfile,
         };
       });
 
-      console.log("Owner pending bookings for", token.id, ":", enrichedBookings);
+  debugLog("Owner pending bookings for", token.id, ":", enrichedBookings);
       return NextResponse.json(enrichedBookings);
     }
 
@@ -185,7 +252,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    console.log("Bookings found for", token.email, ":", bookings);
+  debugLog("Bookings found for", token.email, ":", bookings);
     return NextResponse.json(bookings || []);
   } catch (error) {
     console.error("Error fetching bookings:", error);
@@ -201,7 +268,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    const token = await getToken({ req: req as any });
+  const token = await getAuthToken(req);
     if (!token?.email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -211,7 +278,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       return NextResponse.json({ error: "Missing rideId" }, { status: 400 });
     }
 
-    console.log("Creating booking for user:", token.email, "ride:", rideId);
+  debugLog("Creating booking for user:", token.email, "ride:", rideId);
 
     // Check if ride exists
     const { data: ride, error: rideError } = await supabase
@@ -220,7 +287,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       .eq("id", rideId)
       .single();
 
-    console.log("Ride query result:", { ride, rideError });
+  debugLog("Ride query result:", { ride, rideError });
 
     if (rideError || !ride) {
       console.error("Ride not found or error:", rideError);
@@ -235,7 +302,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     // The user email is already verified by NextAuth
     const userEmail = token.email;
     const userId = token.id;
-    console.log("User email from token:", userEmail, "User ID:", userId);
+  debugLog("User email from token:", userEmail, "User ID:", userId);
 
     if (ride.owner === userId) {
       return NextResponse.json(
@@ -267,7 +334,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       return NextResponse.json({ error: bookingError.message }, { status: 500 });
     }
 
-    console.log("Booking created:", booking);
+  debugLog("Booking created:", booking);
 
     // Decrement seats
     const { data: updatedRide, error: updateError } = await supabase
@@ -279,7 +346,8 @@ export async function POST(req: Request): Promise<NextResponse> {
 
     if (updateError || !updatedRide) {
       console.error("Error updating seats:", updateError);
-      const bookingId = Array.isArray(booking) ? booking[0]?.id : (booking as any)?.id;
+      const insertedBookings = Array.isArray(booking) ? (booking as unknown as BookingRow[]) : [];
+      const bookingId = insertedBookings[0]?.id;
       if (bookingId) {
         await supabase.from("bookings").delete().eq("id", bookingId);
       }

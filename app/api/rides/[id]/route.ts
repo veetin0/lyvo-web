@@ -1,43 +1,67 @@
 import { NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
-import { PrismaClient } from "@prisma/client";
+import type { JWT } from "next-auth/jwt";
+import { NextRequest } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
-const prisma = new PrismaClient();
+type AuthToken = (JWT & { id?: string | null; email?: string | null }) | null;
 
-export async function DELETE(
-  req: Request,
-  context: { params: Promise<{ id: string }> }
-) {
-  const { id } = await context.params; // ✅ puretaan id yhdellä kertaa
-  const token = await getToken({ req: req as any });
+type RouteParams = { id: string };
+type RouteContext = { params: Promise<RouteParams> };
 
-  if (!token) {
+interface RideOwnerRow {
+  id: string;
+  owner?: string | null;
+  driver_id?: string | null;
+}
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+const getCurrentUserId = (token: AuthToken): string | null => token?.id ?? token?.email ?? null;
+
+export async function DELETE(req: NextRequest, context: RouteContext): Promise<NextResponse> {
+  const { id } = await context.params;
+  const token = (await getToken({ req })) as AuthToken;
+
+  const currentUserId = getCurrentUserId(token);
+
+  if (!currentUserId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const userId = (token as any).id as string | undefined;
-
-  if (!userId) {
-    return NextResponse.json({ error: "User ID missing" }, { status: 400 });
-  }
-
   try {
-    const ride = await prisma.ride.findUnique({ where: { id } });
+    const { data: ride, error: rideError } = await supabase
+      .from("rides")
+      .select("id, owner, driver_id")
+      .eq("id", id)
+      .maybeSingle();
 
-    if (!ride) {
+    if (rideError || !ride) {
       return NextResponse.json({ error: "Ride not found" }, { status: 404 });
     }
 
-    const ownerId = (ride as any).owner || (ride as any).driverId;
-
-    if (ownerId !== userId) {
+    const typedRide = ride as RideOwnerRow;
+    const ownerId = typedRide.owner ?? typedRide.driver_id ?? null;
+    if (ownerId !== currentUserId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    await prisma.ride.delete({ where: { id } });
+    const { error: deleteError } = await supabase
+      .from("rides")
+      .delete()
+      .eq("id", id);
+
+    if (deleteError) {
+      console.error("Virhe poistettaessa kyytiä:", deleteError);
+      return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    }
+
     return NextResponse.json({ success: true });
-  } catch (err) {
-    console.error("Virhe poistettaessa kyytiä:", err);
+  } catch (error) {
+    console.error("Virhe poistettaessa kyytiä:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
