@@ -81,13 +81,13 @@ export default function Header() {
 
   return (
     <header className="fixed inset-x-0 top-0 z-40 border-b border-emerald-100 bg-white/95">
-      <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-6 px-4 py-3 sm:px-6 lg:py-4">
-        <div className="flex items-center gap-4">
-          <Link href={`/${currentLocale}`} className="flex items-center" aria-label="Lyvo home">
+      <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:gap-6 lg:py-4">
+        <div className="flex items-center gap-4 shrink-0">
+          <Link href={`/${currentLocale}`} className="flex items-center shrink-0" aria-label="Lyvo home">
             <Image
               src={lyvoLogo}
               alt="Lyvo logo"
-              className="h-11 w-auto object-contain"
+              className="h-10 w-auto object-contain sm:h-11"
               priority
               sizes="(max-width: 768px) 128px, 176px"
             />
@@ -97,7 +97,7 @@ export default function Header() {
           </p>
         </div>
 
-        <nav className="hidden items-center gap-2 rounded-full bg-emerald-50/70 px-4 py-2 text-sm font-medium text-emerald-700 md:flex">
+        <nav className="hidden items-center gap-2 rounded-full bg-emerald-50/70 px-3 py-2 text-sm font-medium text-emerald-700 lg:flex">
           {navItems.map((item) => (
             <Link
               key={item.href}
@@ -113,7 +113,7 @@ export default function Header() {
           ))}
         </nav>
 
-        <div className="hidden items-center gap-4 md:flex">
+        <div className="hidden items-center gap-3 lg:flex shrink-0">
           <div className="flex items-center gap-2 rounded-full border border-emerald-100 bg-white px-3 py-1.5 text-xs font-semibold">
             {languageOptions.map((option) => (
               <Link
@@ -129,12 +129,14 @@ export default function Header() {
               </Link>
             ))}
           </div>
-          <AuthButtons />
+          <div className="shrink-0">
+            <AuthButtons />
+          </div>
         </div>
 
         <button
           onClick={() => setMobileMenuOpen((prev) => !prev)}
-          className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-emerald-100 text-emerald-700 md:hidden"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-emerald-100 text-emerald-700 lg:hidden"
           aria-label="Toggle navigation menu"
         >
           <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -144,7 +146,7 @@ export default function Header() {
       </div>
 
       {mobileMenuOpen && (
-        <div className="border-t border-emerald-100 bg-white md:hidden">
+        <div className="border-t border-emerald-100 bg-white lg:hidden">
           <div className="space-y-6 px-4 py-6">
             <nav className="space-y-3">
               {navItems.map((item) => (
