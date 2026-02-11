@@ -159,7 +159,7 @@ export default function BookingsPage() {
     }
 
     if (!session?.user) {
-      router.push("/auth/login");
+      router.push(`/${locale}/auth/login`);
       return;
     }
 
@@ -182,7 +182,7 @@ export default function BookingsPage() {
     };
 
     loadBookings();
-  }, [session, status, router, t.loadError]);
+  }, [session, status, router, t.loadError, locale]);
 
   const statusCounts = useMemo(() => {
     return bookings.reduce(

@@ -48,7 +48,7 @@ export default function AuthButtons() {
   }
 
   const handleSignIn = async () => {
-    router.push("/auth/login");
+    router.push(`/${currentLocale}/auth/login`);
   };
 
   return (

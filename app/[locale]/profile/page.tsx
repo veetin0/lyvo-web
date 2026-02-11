@@ -594,7 +594,7 @@ export default function ProfilePage() {
       return;
     }
     if (status === "unauthenticated" && !session) {
-      setTimeout(() => router.push("/auth/login"), 200);
+  setTimeout(() => router.push(`/${locale}/auth/login`), 200);
       return;
     }
 

@@ -1543,7 +1543,7 @@ export default function EtsiKyyti() {
               </p>
               <div className="flex justify-center gap-3">
                 <button
-                  onClick={() => router.push("/auth/login")}
+                  onClick={() => router.push(`/${locale}/auth/login`)}
                   className="px-5 py-2 rounded-xl bg-emerald-500 text-white hover:bg-emerald-600 transition"
                 >
                   Sign in
