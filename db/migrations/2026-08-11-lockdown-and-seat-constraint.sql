@@ -42,3 +42,13 @@ drop policy if exists "delete_own_booking" on public.bookings;
 alter table public.rides
   drop constraint rides_seats_check,
   add constraint rides_seats_check check (seats >= 0);
+
+-- ---------------------------------------------------------------------------
+-- 3. Data: remove one ride left behind by the Prisma era.
+-- ---------------------------------------------------------------------------
+-- Its owner was a Prisma cuid matching no User row, so nobody could manage or
+-- delete it through the app, yet it still appeared in the public ride list.
+-- Departure had passed nine months earlier and it had no bookings. Deleted on
+-- the owner's instruction. Every remaining rides.owner resolves to a User row.
+
+delete from public.rides where owner = 'cmgv4ai2s0000p45kn6u8an26';
