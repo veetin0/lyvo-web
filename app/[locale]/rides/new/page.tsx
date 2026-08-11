@@ -8,7 +8,6 @@ import { usePathname } from "next/navigation";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion } from "framer-motion";
-import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import GoogleMapRide from "@/components/GoogleMapRide";
 import LocationAutocomplete from "@/components/LocationAutocomplete";
@@ -362,28 +361,33 @@ export default function NewRide() {
       return;
     }
 
-    const { error } = await supabase.from("rides").insert([
-      {
-  owner: sessionUserId,
-        from_city: ride.from,
-        to_city: ride.to,
-        departure: new Date(`${ride.date}T${ride.time}`).toISOString(),
+    // Ride creation goes through the API so ownership and the price ceiling are
+    // enforced on the server. Owner, driver name and rating are derived from
+    // the session there and deliberately not sent from here.
+    const response = await fetch("/api/rides", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: ride.from,
+        to: ride.to,
+        date: ride.date,
+        time: ride.time,
         seats: ride.seats,
-        price_eur: Number(ride.price),
+        price: Number(ride.price),
         car: carBrand || null,
-  driver_name: sessionUser?.name ?? "Tuntematon",
-        driver_rating: 0,
-        stops: JSON.stringify(stops),
-  distance_meters: distanceMeters !== null ? Math.round(distanceMeters) : null,
-  duration_seconds: durationSeconds !== null ? Math.round(durationSeconds) : null,
-  route_polyline: routePolyline,
-      },
-    ]);
+        stops,
+        distanceMeters: distanceMeters !== null ? Math.round(distanceMeters) : null,
+        durationSeconds: durationSeconds !== null ? Math.round(durationSeconds) : null,
+        routePolyline,
+      }),
+    });
 
-    if (error) {
-      console.error("Virhe tallennuksessa:", error.message || error);
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => null);
+      const message = errorBody?.error ?? `HTTP ${response.status}`;
+      console.error("Virhe tallennuksessa:", message);
       setNotificationType("error");
-      setNotificationMessage(`Virhe tallennuksessa: ${error.message || JSON.stringify(error)}`);
+      setNotificationMessage(`Virhe tallennuksessa: ${message}`);
       setShowNotification(true);
       setTimeout(() => setShowNotification(false), 3000);
     } else {

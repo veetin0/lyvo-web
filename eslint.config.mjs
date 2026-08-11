@@ -19,9 +19,13 @@ const config = [
   {
     ignores: [
       "node_modules/**",
+      "**/node_modules/**",
       ".next/**",
+      "**/.next/**",
       "out/**",
       "build/**",
+      // Agent worktrees hold full project copies; linting them buries real findings.
+      ".claude/**",
       "next-env.d.ts",
       "**/*.css",
     ],

@@ -8,7 +8,6 @@ import { RideMiniMap } from "@/components/RideMiniMap";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter, usePathname } from "next/navigation";
 import { CheckCircle2, X } from "lucide-react";
-import { createClient } from "@supabase/supabase-js";
 import { useSession } from "next-auth/react";
 
 const translations = {
@@ -298,11 +297,6 @@ interface ConversationResponse {
   } | null;
 }
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
 const optionLabelMap: Record<string, { fi: string; en: string; sv: string }> = {
   electric: { fi: "Sähköauto", en: "Electric car", sv: "Elbil" },
   van: { fi: "Tila-auto", en: "Van", sv: "Skåpbil" },
@@ -419,13 +413,14 @@ const normalizeOptions = (value: unknown): string[] => {
   return [];
 };
 
+// Consumes the payload from GET /api/rides (camelCase), not raw Supabase rows.
 const transformRideRow = (raw: Record<string, unknown>, fallbackCar: string): Ride | null => {
   const id = toNonEmptyString(raw.id);
   const owner = toNonEmptyString(raw.owner);
-  const fromCity = toNonEmptyString(raw.from_city);
-  const toCity = toNonEmptyString(raw.to_city);
+  const fromCity = toNonEmptyString(raw.from);
+  const toCity = toNonEmptyString(raw.to);
   const departureRaw = toNonEmptyString(raw.departure);
-  const priceValue = toFiniteNumber(raw.price_eur);
+  const priceValue = toFiniteNumber(raw.price);
 
   if (!id || !owner || !fromCity || !toCity || !departureRaw || priceValue === null) {
     return null;
@@ -437,10 +432,10 @@ const transformRideRow = (raw: Record<string, unknown>, fallbackCar: string): Ri
   }
 
   const seatsValue = toFiniteNumber(raw.seats);
-  const distanceMeters = toFiniteNumber(raw.distance_meters);
-  const durationSeconds = toFiniteNumber(raw.duration_seconds);
-  const driverRating = toFiniteNumber(raw.driver_rating);
-  const driverNameRaw = toNonEmptyString(raw.driver_name);
+  const distanceMeters = toFiniteNumber(raw.distanceMeters);
+  const durationSeconds = toFiniteNumber(raw.durationSeconds);
+  const driverRating = toFiniteNumber(raw.driverRating);
+  const driverNameRaw = toNonEmptyString(raw.driverName);
   const carValue = toNonEmptyString(raw.car) ?? fallbackCar;
 
   return {
@@ -460,7 +455,7 @@ const transformRideRow = (raw: Record<string, unknown>, fallbackCar: string): Ri
     owner,
     distanceMeters,
     durationSeconds,
-    routePolyline: toNonEmptyString(raw.route_polyline),
+    routePolyline: toNonEmptyString(raw.routePolyline),
     stops: normalizeStops(raw.stops),
   };
 };
@@ -794,15 +789,12 @@ export default function EtsiKyyti() {
   useEffect(() => {
     const fetchRides = async () => {
       try {
-        const { data, error } = await supabase
-          .from("rides")
-          .select("*")
-          .order("created_at", { ascending: false });
-
-        if (error) {
-          throw error;
+        const ridesResponse = await fetch("/api/rides");
+        if (!ridesResponse.ok) {
+          throw new Error(`Failed to load rides: HTTP ${ridesResponse.status}`);
         }
 
+        const data: unknown = await ridesResponse.json();
         const rawRows = Array.isArray(data) ? (data as Record<string, unknown>[]) : [];
         const typedRides = rawRows.reduce<Ride[]>((acc, row) => {
           const ride = transformRideRow(row, t.carNotSpecified);

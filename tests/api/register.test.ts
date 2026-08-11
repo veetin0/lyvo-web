@@ -145,6 +145,11 @@ describe("POST /api/register", () => {
     expect(insertMock).toHaveBeenCalledTimes(1);
     expect(capturedInsertPayload).toBeDefined();
 
+    // The response must never carry the password hash back to the client, so
+    // the insert selects an explicit column list rather than every column.
+    expect(selectAfterInsertMock).toHaveBeenCalledWith("id, name, email");
+    expect(JSON.stringify(body)).not.toContain("passwordHash");
+
     const insertedRow = capturedInsertPayload?.[0];
     expect(insertedRow).toBeDefined();
     if (!insertedRow) {

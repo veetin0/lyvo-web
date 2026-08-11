@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "@/lib/supabase";
 import { useSession } from "next-auth/react";
 import { X } from "lucide-react";
 import Image from "next/image";
@@ -270,21 +269,22 @@ interface PendingBookingEntry extends BookingEntry {
   rider?: RiderProfileSummary | null;
 }
 
-interface SupabaseRideRow {
+// Shape returned by GET /api/rides.
+interface ApiRideRow {
   id: string;
-  from_city?: string | null;
-  to_city?: string | null;
+  from?: string | null;
+  to?: string | null;
   departure?: string | null;
-  price_eur?: number | null;
+  price?: number | null;
   seats?: number | null;
   owner?: string | null;
   car?: string | null;
   options?: unknown;
-  driver_name?: string | null;
-  driver_rating?: number | null;
-  distance_meters?: number | null;
-  duration_seconds?: number | null;
-  route_polyline?: string | null;
+  driverName?: string | null;
+  driverRating?: number | null;
+  distanceMeters?: number | null;
+  durationSeconds?: number | null;
+  routePolyline?: string | null;
   stops?: unknown;
 }
 
@@ -643,11 +643,14 @@ export default function ProfilePage() {
       }
 
       try {
-        console.log("Supabase URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
-        const rideRes = await supabase
-          .from("rides")
-          .select("id, from_city, to_city, departure, seats, price_eur")
-          .eq("owner", userId ?? "");
+        // Owned rides come from the API, which scopes them to the session.
+        const ownedRidesResponse = await fetch("/api/rides?mine=1");
+        const rideRes = ownedRidesResponse.ok
+          ? { data: (await ownedRidesResponse.json()) as ApiRideRow[], error: null }
+          : {
+              data: null,
+              error: { message: `HTTP ${ownedRidesResponse.status}` },
+            };
 
         if (rideRes.error) {
           if (rideRes.error.message.includes("Failed to fetch") || rideRes.error.message.includes("Load failed")) {
@@ -676,7 +679,7 @@ export default function ProfilePage() {
             document.body.appendChild(noRidesWarning);
             setTimeout(() => noRidesWarning.remove(), 5000);
           } else {
-            const ridesData = rideRes.data as SupabaseRideRow[];
+            const ridesData = rideRes.data;
             const mappedRides: Ride[] = ridesData.map((ride) => {
               const departureDate = ride.departure ? new Date(ride.departure) : null;
               const hasValidDeparture = !!(departureDate && !Number.isNaN(departureDate.getTime()));
@@ -686,11 +689,11 @@ export default function ProfilePage() {
                 : "";
               return {
                 id: ride.id,
-                from: ride.from_city ?? "",
-                to: ride.to_city ?? "",
+                from: ride.from ?? "",
+                to: ride.to ?? "",
                 date: formattedDate,
                 time: formattedTime,
-                price: ride.price_eur ?? 0,
+                price: ride.price ?? 0,
               };
             });
             setRides(mappedRides);

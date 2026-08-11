@@ -88,11 +88,12 @@ export async function POST(req: Request) {
     const passwordHash = await bcrypt.hash(password, 10);
     const userId = uuidv4();
 
-    // Create new user
+    // Create new user. Select explicit columns so the password hash never
+    // leaves the server.
     const { data: user, error } = await supabase
       .from("User")
       .insert([{ id: userId, name, email, passwordHash }])
-      .select()
+      .select("id, name, email")
       .single();
 
     if (error) {

@@ -40,5 +40,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# claude code (agent worktrees and local settings)
+.claude/
+
 # .gitignore
 .env
