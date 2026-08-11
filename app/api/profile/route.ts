@@ -34,8 +34,10 @@ export async function GET(req: Request): Promise<NextResponse> {
     const requestedEmail = searchParams.get("email");
     const requestedUserId = searchParams.get("userId");
 
+    // Own profile is looked up by the session's User id. The old fallback to
+    // token.email searched the id column for an address and always missed.
     const identifierField = requestedEmail ? "email" : "id";
-    const identifierValue = requestedEmail ?? requestedUserId ?? token.id ?? token.email;
+    const identifierValue = requestedEmail ?? requestedUserId ?? token.id;
 
     if (!identifierValue) {
       return NextResponse.json({ error: "Profile identifier missing" }, { status: 400 });

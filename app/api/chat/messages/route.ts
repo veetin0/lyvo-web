@@ -25,7 +25,7 @@ const supabase = createClient(
 );
 
 const getCurrentUserId = (token: AuthToken): string | null =>
-  token?.id ?? token?.email ?? null;
+  token?.id ?? null;
 
 const ensureConversationParticipant = async (
   conversationId: string,

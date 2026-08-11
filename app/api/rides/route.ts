@@ -153,7 +153,9 @@ const mapRideRow = (row: RideRow): RidePayload | null => {
   };
 };
 
-const getCurrentUserId = (token: AuthToken): string | null => token?.id ?? token?.email ?? null;
+// Identity is always the User table's id. Falling back to the email would
+// give one person two identifiers, and ownership checks compare ids.
+const getCurrentUserId = (token: AuthToken): string | null => token?.id ?? null;
 
 // --- HAE KYYDIT ---
 // `?mine=1` narrows the list to the signed-in user's own rides.

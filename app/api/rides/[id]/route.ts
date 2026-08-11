@@ -20,7 +20,9 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const getCurrentUserId = (token: AuthToken): string | null => token?.id ?? token?.email ?? null;
+// Identity is always the User table's id. Falling back to the email would
+// give one person two identifiers, and ownership checks compare ids.
+const getCurrentUserId = (token: AuthToken): string | null => token?.id ?? null;
 
 export async function DELETE(req: NextRequest, context: RouteContext): Promise<NextResponse> {
   const { id } = await context.params;

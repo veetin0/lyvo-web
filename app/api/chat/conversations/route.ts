@@ -46,7 +46,7 @@ const supabase = createClient(
 );
 
 const getCurrentUserId = (token: AuthToken): string | null =>
-  token?.id ?? token?.email ?? null;
+  token?.id ?? null;
 
 const buildPartnerMap = async (userIds: string[]): Promise<PartnerProfileMap> => {
   if (userIds.length === 0) {
