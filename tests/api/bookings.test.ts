@@ -123,17 +123,37 @@ describe("/api/bookings POST", () => {
     const token = { id: "rider-id", email: "rider@example.com" };
     getTokenMock.mockResolvedValue(token);
 
-    let ridesCall = 0;
+    // Model the seat count for real, compare-and-swap included, so the
+    // assertion below is about the outcome rather than the shape of the calls.
+    const rideState = { id: rideId, owner: "driver-id", seats: 2 };
 
-    const initialRide = { id: rideId, owner: "driver-id", seats: 2 };
-    const rideSingleMock = vi.fn().mockResolvedValue({ data: initialRide, error: null });
-    const rideEqMock = vi.fn().mockReturnValue({ single: rideSingleMock });
-    const rideSelectMock = vi.fn().mockReturnValue({ eq: rideEqMock });
-
-    const updateSingleMock = vi.fn().mockResolvedValue({ data: { seats: 1 }, error: null });
-    const updateSelectMock = vi.fn().mockReturnValue({ single: updateSingleMock });
-    const updateEqMock = vi.fn().mockReturnValue({ select: updateSelectMock });
-    const updateMock = vi.fn().mockReturnValue({ eq: updateEqMock });
+    const ridesApi = {
+      select: vi.fn(() => {
+        const builder = {
+          eq: () => builder,
+          single: async () => ({ data: rideState, error: null }),
+          maybeSingle: async () => ({ data: { seats: rideState.seats }, error: null }),
+        };
+        return builder;
+      }),
+      update: vi.fn((patch: { seats: number }) => {
+        const filters: Record<string, unknown> = {};
+        const builder = {
+          eq(column: string, value: unknown) {
+            filters[column] = value;
+            return builder;
+          },
+          async select() {
+            if ("seats" in filters && filters.seats !== rideState.seats) {
+              return { data: [], error: null };
+            }
+            rideState.seats = patch.seats;
+            return { data: [{ seats: rideState.seats }], error: null };
+          },
+        };
+        return builder;
+      }),
+    };
 
     const bookingsSingleMock = vi.fn().mockResolvedValue({ data: null, error: null });
     const bookingsEqSecondMock = vi.fn().mockReturnValue({ single: bookingsSingleMock });
@@ -149,10 +169,7 @@ describe("/api/bookings POST", () => {
     const supabaseStub = {
       from: vi.fn((table: string) => {
         if (table === "rides") {
-          if (ridesCall++ === 0) {
-            return { select: rideSelectMock };
-          }
-          return { update: updateMock };
+          return ridesApi;
         }
         if (table === "bookings") {
           return {
@@ -180,8 +197,7 @@ describe("/api/bookings POST", () => {
     expect(body.success).toBe(true);
     expect(body.booking).toEqual([{ id: "booking-1" }]);
 
-    expect(rideSelectMock).toHaveBeenCalledWith("id, owner, seats");
-    expect(rideEqMock).toHaveBeenCalledWith("id", rideId);
+    expect(ridesApi.select).toHaveBeenCalledWith("id, owner, seats");
 
     expect(bookingsSelectMock).toHaveBeenCalledWith("id");
     expect(bookingsEqFirstMock).toHaveBeenCalledWith("user_email", token.email);
@@ -191,9 +207,7 @@ describe("/api/bookings POST", () => {
     expect(insertSelectMock).toHaveBeenCalled();
     expect(deleteMock).not.toHaveBeenCalled();
 
-    expect(updateMock).toHaveBeenCalledWith({ seats: initialRide.seats - 1 });
-    expect(updateEqMock).toHaveBeenCalledWith("id", rideId);
-    expect(updateSelectMock).toHaveBeenCalledWith("seats");
-    expect(updateSingleMock).toHaveBeenCalled();
+    // The seat was genuinely taken, not merely written over.
+    expect(rideState.seats).toBe(1);
   });
 });

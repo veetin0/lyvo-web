@@ -4,6 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 import type { JWT } from "next-auth/jwt";
 import type { NextRequest } from "next/server";
 
+import { reserveSeat } from "@/lib/seats";
+
 interface RideSummaryRow {
   id: string;
   from_city?: string | null;
@@ -336,21 +338,22 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   debugLog("Booking created:", booking);
 
-    // Decrement seats
-    const { data: updatedRide, error: updateError } = await supabase
-      .from("rides")
-      .update({ seats: ride.seats - 1 })
-      .eq("id", rideId)
-      .select("seats")
-      .single();
+    // Take the seat. This is compare-and-swap rather than a plain write, so two
+    // riders racing for the last seat cannot both succeed. The seats check above
+    // is only a fast path — this is the one that actually decides.
+    const reservation = await reserveSeat(supabase, rideId);
 
-    if (updateError || !updatedRide) {
-      console.error("Error updating seats:", updateError);
+    if (!reservation.ok) {
       const insertedBookings = Array.isArray(booking) ? (booking as unknown as BookingRow[]) : [];
       const bookingId = insertedBookings[0]?.id;
       if (bookingId) {
         await supabase.from("bookings").delete().eq("id", bookingId);
       }
+
+      if (reservation.reason === "sold_out") {
+        return NextResponse.json({ error: "Ride is full" }, { status: 400 });
+      }
+
       return NextResponse.json({ error: "Unable to reserve seat" }, { status: 500 });
     }
 

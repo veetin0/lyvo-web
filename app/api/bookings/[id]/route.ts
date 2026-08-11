@@ -4,6 +4,8 @@ import { getToken } from "next-auth/jwt";
 import { createClient } from "@supabase/supabase-js";
 import type { JWT } from "next-auth/jwt";
 
+import { releaseSeat, SEAT_HOLDING_STATUSES } from "@/lib/seats";
+
 type AuthToken = (JWT & { id?: string | null; email?: string | null }) | null;
 
 interface BookingWithRideOwner {
@@ -16,19 +18,11 @@ interface BookingWithRideOwner {
   } | null;
 }
 
-interface RideSeatInfo {
-  seats?: number | null;
-}
-
 interface BookingWithRideSeats {
   id: string;
   user_email?: string | null;
   status: string;
   ride_id?: string | null;
-  ride?: {
-    id: string;
-    seats?: number | null;
-  } | null;
 }
 
 interface UpdateBookingBody {
@@ -75,15 +69,6 @@ const parseBookingWithRideOwner = (data: unknown): BookingWithRideOwner | null =
   };
 };
 
-const parseRideSeatInfo = (data: unknown): RideSeatInfo | null => {
-  if (!data || typeof data !== "object") {
-    return null;
-  }
-  const record = data as Record<string, unknown>;
-  const seats = typeof record.seats === "number" ? record.seats : null;
-  return { seats };
-};
-
 const parseBookingWithRideSeats = (data: unknown): BookingWithRideSeats | null => {
   if (!data || typeof data !== "object") {
     return null;
@@ -98,25 +83,11 @@ const parseBookingWithRideSeats = (data: unknown): BookingWithRideSeats | null =
   const status = typeof record.status === "string" ? record.status : "";
   const userEmail = typeof record.user_email === "string" ? record.user_email : null;
 
-  let ride: BookingWithRideSeats["ride"] = null;
-  const rideRaw = record.ride;
-  if (rideRaw && typeof rideRaw === "object") {
-    const rideRecord = rideRaw as Record<string, unknown>;
-    const nestedRideId = typeof rideRecord.id === "string" ? rideRecord.id : null;
-    if (nestedRideId) {
-      ride = {
-        id: nestedRideId,
-        seats: typeof rideRecord.seats === "number" ? rideRecord.seats : null,
-      };
-    }
-  }
-
   return {
     id,
     user_email: userEmail,
     status,
     ride_id: rideId,
-    ride,
   };
 };
 
@@ -175,34 +146,34 @@ export async function PUT(
       return NextResponse.json({ error: "Not authorized" }, { status: 403 });
     }
 
-    // Update booking status
+    // Transition atomically. Filtering on the current status means a repeated or
+    // concurrent call matches zero rows rather than applying the change twice —
+    // that double-apply is what previously let one seat be returned repeatedly.
     const newStatus = action === "accept" ? "accepted" : "rejected";
-    const { error: updateError } = await supabase
+    const allowedFrom = action === "accept" ? ["pending"] : [...SEAT_HOLDING_STATUSES];
+
+    const { data: transitioned, error: updateError } = await supabase
       .from("bookings")
       .update({ status: newStatus })
-      .eq("id", bookingId);
+      .eq("id", bookingId)
+      .in("status", allowedFrom)
+      .select("id");
 
     if (updateError) {
       return NextResponse.json({ error: updateError.message }, { status: 500 });
     }
 
-    if (action === "reject") {
-      if (booking.ride_id) {
-        const { data: rideData } = await supabase
-          .from("rides")
-          .select("seats")
-          .eq("id", booking.ride_id)
-          .single();
+    if (!Array.isArray(transitioned) || transitioned.length === 0) {
+      return NextResponse.json(
+        { error: "Booking is no longer awaiting a decision" },
+        { status: 409 }
+      );
+    }
 
-        const ride = parseRideSeatInfo(rideData);
-
-        if (ride && typeof ride.seats === "number") {
-          await supabase
-            .from("rides")
-            .update({ seats: ride.seats + 1 })
-            .eq("id", booking.ride_id);
-        }
-      }
+    // Safe to release: the transition above genuinely happened, and it came from
+    // a state that was still holding a seat.
+    if (action === "reject" && booking.ride_id) {
+      await releaseSeat(supabase, booking.ride_id);
     }
 
     return NextResponse.json({ success: true, status: newStatus });
@@ -235,7 +206,7 @@ export async function DELETE(
     const { data: bookingData, error: bookingError } = await supabase
       .from("bookings")
       .select(
-        `id, user_email, status, ride_id, ride:ride_id ( id, seats )`
+        `id, user_email, status, ride_id`
       )
       .eq("id", bookingId)
       .single();
@@ -250,20 +221,36 @@ export async function DELETE(
       return NextResponse.json({ error: "Not authorized" }, { status: 403 });
     }
 
-    if (booking.ride && typeof booking.ride.seats === "number" && booking.ride_id) {
-      await supabase
-        .from("rides")
-        .update({ seats: booking.ride.seats + 1 })
-        .eq("id", booking.ride_id);
+    // Delete the row and learn whether it was still holding a seat in a single
+    // step. A rejected booking already gave its seat back when it was rejected,
+    // so cancelling it afterwards must not hand back a second one.
+    const { data: removedHolding, error: deleteError } = await supabase
+      .from("bookings")
+      .delete()
+      .eq("id", bookingId)
+      .in("status", [...SEAT_HOLDING_STATUSES])
+      .select("id");
+
+    if (deleteError) {
+      return NextResponse.json({ error: deleteError.message }, { status: 500 });
     }
 
-    const { error: deleteError } = await supabase
+    if (Array.isArray(removedHolding) && removedHolding.length > 0) {
+      if (booking.ride_id) {
+        await releaseSeat(supabase, booking.ride_id);
+      }
+      return NextResponse.json({ success: true });
+    }
+
+    // Nothing seat-holding matched: the booking was already rejected, or already
+    // gone. Remove it without touching the seat count.
+    const { error: fallbackError } = await supabase
       .from("bookings")
       .delete()
       .eq("id", bookingId);
 
-    if (deleteError) {
-      return NextResponse.json({ error: deleteError.message }, { status: 500 });
+    if (fallbackError) {
+      return NextResponse.json({ error: fallbackError.message }, { status: 500 });
     }
 
     return NextResponse.json({ success: true });
