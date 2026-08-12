@@ -155,13 +155,13 @@ export default function LoginPageContent({ locale }: LoginPageContentProps) {
     setLoading(true);
     setError("");
     try {
-      const result = await signIn("google", { redirect: false });
-      if (result?.error) {
-        setError(t.googleError ?? "");
-        setLoading(false);
-        return;
-      }
-      router.push(`/${activeLocale}`);
+      // OAuth needs a full-page navigation to Google's consent screen, so this
+      // must not pass redirect:false. That option makes signIn resolve with the
+      // authorization URL instead of going there, and the caller is expected to
+      // navigate itself — which this handler did not do, so the browser never
+      // left the login page and landed home unauthenticated. NextAuth returns
+      // the user to callbackUrl once the callback completes.
+      await signIn("google", { callbackUrl: `/${activeLocale}` });
     } catch {
       setError(t.googleError ?? "");
       setLoading(false);
