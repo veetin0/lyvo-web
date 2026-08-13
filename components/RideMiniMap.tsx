@@ -1,159 +1,97 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { loadGoogleMaps } from "./lib/loadGoogleMaps";
+import { useMemo } from "react";
+import { buildRouteShape, decodePolyline } from "@/lib/polyline";
 
 interface RideMiniMapProps {
   polyline: string;
   className?: string;
 }
 
+/**
+ * Route preview drawn straight from the stored polyline.
+ *
+ * This used to load the Google Maps JavaScript API — a billed map load every
+ * time a ride was opened — to decode a polyline already sitting in the database
+ * and draw it over a basemap the user cannot pan or zoom. The shape is the
+ * useful part, and it renders as inline SVG with no key, no network request and
+ * no cost.
+ */
 export function RideMiniMap({ polyline, className }: RideMiniMapProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<google.maps.Map | null>(null);
-  const polylineRef = useRef<google.maps.Polyline | null>(null);
-  const markersRef = useRef<google.maps.Marker[]>([]);
-  const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const init = async () => {
-      if (!polyline || !containerRef.current) {
-        setStatus("idle");
-        return;
-      }
-
-      if (!cancelled) {
-        setStatus("loading");
-      }
-
-      try {
-        await loadGoogleMaps();
-        if (cancelled || !containerRef.current || !polyline) {
-          return;
-        }
-
-        if (!window.google?.maps?.geometry?.encoding) {
-          throw new Error("Google Maps geometry encoding is unavailable");
-        }
-
-        const path = window.google.maps.geometry.encoding.decodePath(polyline);
-        if (!path.length) {
-          if (!cancelled) {
-            setStatus("error");
-          }
-          return;
-        }
-
-        if (!mapRef.current) {
-          mapRef.current = new window.google.maps.Map(containerRef.current, {
-            disableDefaultUI: true,
-            gestureHandling: "none",
-            zoomControl: false,
-            mapTypeControl: false,
-            clickableIcons: false,
-            backgroundColor: "#ecfdf5",
-          });
-        }
-
-        const map = mapRef.current;
-        if (!map) {
-          if (!cancelled) {
-            setStatus("error");
-          }
-          return;
-        }
-
-        markersRef.current.forEach((marker) => marker.setMap(null));
-        markersRef.current = [];
-
-        if (polylineRef.current) {
-          polylineRef.current.setMap(null);
-          polylineRef.current = null;
-        }
-
-        const bounds = new window.google.maps.LatLngBounds();
-        path.forEach((point: google.maps.LatLng) => bounds.extend(point));
-        map.fitBounds(bounds, 32);
-
-        const routeLine = new window.google.maps.Polyline({
-          path,
-          strokeColor: "#10B981",
-          strokeOpacity: 0.85,
-          strokeWeight: 4,
-          geodesic: true,
-        });
-        routeLine.setMap(map);
-        polylineRef.current = routeLine;
-
-        const startMarker = new window.google.maps.Marker({
-          position: path[0],
-          map,
-          label: {
-            text: "A",
-            color: "#047857",
-            fontWeight: "bold",
-          },
-        });
-        const endMarker = new window.google.maps.Marker({
-          position: path[path.length - 1],
-          map,
-          label: {
-            text: "B",
-            color: "#047857",
-            fontWeight: "bold",
-          },
-        });
-
-        markersRef.current = [startMarker, endMarker];
-
-        if (!cancelled) {
-          setStatus("ready");
-        }
-      } catch (error) {
-        console.error("Failed to initialise ride minimap:", error);
-        if (!cancelled) {
-          setStatus("error");
-        }
-      }
-    };
-
-    init();
-
-    return () => {
-      cancelled = true;
-    };
+  const shape = useMemo(() => {
+    if (!polyline) return null;
+    return buildRouteShape(decodePolyline(polyline));
   }, [polyline]);
 
-  useEffect(() => {
-    return () => {
-      markersRef.current.forEach((marker) => marker.setMap(null));
-      markersRef.current = [];
-      if (polylineRef.current) {
-        polylineRef.current.setMap(null);
-        polylineRef.current = null;
-      }
-      if (mapRef.current) {
-        mapRef.current = null;
-      }
-    };
-  }, []);
+  const wrapperClassName = className ? `relative ${className}` : "relative h-full w-full";
 
-  const wrapperClassName = className
-    ? `relative ${className}`
-    : "relative h-full w-full";
-
-  const overlayClassName = `absolute inset-0 flex items-center justify-center text-sm font-medium text-emerald-700 ${status === "error" ? "bg-emerald-100/80" : "bg-emerald-100/60 animate-pulse"}`;
+  if (!shape) {
+    return (
+      <div className={wrapperClassName}>
+        <div
+          className="absolute inset-0 flex items-center justify-center bg-emerald-100/60 text-sm font-medium text-emerald-700"
+          aria-live="polite"
+        >
+          Reittiä ei voi näyttää
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={wrapperClassName}>
-      <div ref={containerRef} className="absolute inset-0" />
-      {status !== "ready" && (
-        <div className={overlayClassName} aria-live="polite">
-          {status === "error" ? "Map preview unavailable" : "Loading map…"}
-        </div>
-      )}
+      <svg
+        viewBox={`0 0 ${shape.width} ${shape.height}`}
+        preserveAspectRatio="xMidYMid meet"
+        className="absolute inset-0 h-full w-full bg-emerald-50"
+        role="img"
+        aria-label="Kyydin reitti"
+      >
+        {/* Soft under-stroke so the line stays legible against the background. */}
+        <path
+          d={shape.d}
+          fill="none"
+          stroke="#A7F3D0"
+          strokeWidth={7}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path
+          d={shape.d}
+          fill="none"
+          stroke="#10B981"
+          strokeWidth={3.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+
+        <g>
+          <circle cx={shape.start.x} cy={shape.start.y} r={7} fill="#ffffff" stroke="#047857" strokeWidth={2} />
+          <text
+            x={shape.start.x}
+            y={shape.start.y + 3.5}
+            textAnchor="middle"
+            fontSize={9}
+            fontWeight="bold"
+            fill="#047857"
+          >
+            A
+          </text>
+        </g>
+        <g>
+          <circle cx={shape.end.x} cy={shape.end.y} r={7} fill="#047857" stroke="#ffffff" strokeWidth={2} />
+          <text
+            x={shape.end.x}
+            y={shape.end.y + 3.5}
+            textAnchor="middle"
+            fontSize={9}
+            fontWeight="bold"
+            fill="#ffffff"
+          >
+            B
+          </text>
+        </g>
+      </svg>
     </div>
   );
 }
