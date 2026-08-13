@@ -9,7 +9,7 @@ import { usePathname } from "next/navigation";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
-import GoogleMapRide from "@/components/GoogleMapRide";
+import RoutePreview from "@/components/RoutePreview";
 import LocationAutocomplete from "@/components/LocationAutocomplete";
 import StopLocationInput from "@/components/StopLocationInput";
 import { PlaceSelection } from "@/components/lib/places";
@@ -740,7 +740,7 @@ export default function NewRide() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, delay: 0.1 }}
           >
-            <GoogleMapRide
+            <RoutePreview
               onRouteSelected={handleRouteSelected}
               from={ride.from}
               to={ride.to}

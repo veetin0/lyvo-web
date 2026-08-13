@@ -1,0 +1,202 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+
+import { searchPlaces } from "@/lib/geocoding";
+import type { LatLng } from "@/lib/polyline";
+import { formatDistance, formatDuration, routeThrough } from "@/lib/routing";
+import { RideMiniMap } from "./RideMiniMap";
+import { PlaceSelection } from "./lib/places";
+
+interface RouteLegInfo {
+  distanceMeters: number;
+  durationSeconds: number;
+  distanceText: string;
+  durationText: string;
+}
+
+interface RouteInfo {
+  distance: string;
+  duration: string;
+  polyline: string;
+  distanceMeters: number;
+  durationSeconds: number;
+  legs?: RouteLegInfo[];
+}
+
+interface RoutePreviewProps {
+  onRouteSelected?: (routeInfo: RouteInfo) => void;
+  from?: string;
+  to?: string;
+  fromPlace?: PlaceSelection | null;
+  toPlace?: PlaceSelection | null;
+  stops?: Array<{ place?: PlaceSelection | null; city?: string; price?: string } | null>;
+  countryBiases?: ReadonlyArray<string>;
+}
+
+const DEFAULT_COUNTRY_BIASES = ["fi", "se", "no"] as const;
+
+/**
+ * Resolve one endpoint to coordinates.
+ *
+ * The autocomplete supplies coordinates whenever a suggestion was picked, so the
+ * geocoding fallback only runs for text typed and left unconfirmed.
+ */
+const resolvePoint = async (
+  place: PlaceSelection | null | undefined,
+  text: string | undefined,
+  countries: ReadonlyArray<string>,
+  signal: AbortSignal
+): Promise<LatLng | null> => {
+  if (place?.location && Number.isFinite(place.location.lat) && Number.isFinite(place.location.lng)) {
+    return place.location;
+  }
+
+  const query = (text ?? "").trim();
+  if (query.length < 2) {
+    return null;
+  }
+
+  const [best] = await searchPlaces(query, { limit: 1, countries: [...countries], signal });
+  return best?.location ?? null;
+};
+
+/**
+ * Route preview for the ride form.
+ *
+ * Replaces the Google map: routing comes from OSRM and the shape is drawn as
+ * SVG, so nothing here needs an API key or a billing account. There is no
+ * basemap behind the line — adding one would mean MapLibre plus a tile
+ * provider, which is a separate decision.
+ */
+export default function RoutePreview({
+  onRouteSelected,
+  from,
+  to,
+  fromPlace,
+  toPlace,
+  stops = [],
+  countryBiases = DEFAULT_COUNTRY_BIASES,
+}: RoutePreviewProps) {
+  const [polyline, setPolyline] = useState<string | null>(null);
+  const [summary, setSummary] = useState<{ distance: string; duration: string } | null>(null);
+  const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
+
+  const abortRef = useRef<AbortController | null>(null);
+  // Keeping the callback in a ref stops an inline parent function from
+  // retriggering routing on every render.
+  const callbackRef = useRef(onRouteSelected);
+  callbackRef.current = onRouteSelected;
+
+  const stopsKey = JSON.stringify(
+    (stops ?? []).map((stop) => stop?.place?.location ?? stop?.city ?? null)
+  );
+  const countriesKey = countryBiases.join(",");
+  const fromKey = fromPlace?.location ? `${fromPlace.location.lat},${fromPlace.location.lng}` : (from ?? "");
+  const toKey = toPlace?.location ? `${toPlace.location.lat},${toPlace.location.lng}` : (to ?? "");
+
+  useEffect(() => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    const run = async () => {
+      const countries = countriesKey ? countriesKey.split(",") : [];
+
+      const origin = await resolvePoint(fromPlace, from, countries, controller.signal);
+      const destination = await resolvePoint(toPlace, to, countries, controller.signal);
+
+      if (controller.signal.aborted) return;
+      if (!origin || !destination) {
+        setPolyline(null);
+        setSummary(null);
+        setStatus("idle");
+        return;
+      }
+
+      const waypoints: LatLng[] = [];
+      for (const stop of stops ?? []) {
+        const point = await resolvePoint(stop?.place, stop?.city, countries, controller.signal);
+        if (point) waypoints.push(point);
+      }
+      if (controller.signal.aborted) return;
+
+      setStatus("loading");
+
+      try {
+        const result = await routeThrough([origin, ...waypoints, destination], {
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+
+        if (!result) {
+          setPolyline(null);
+          setSummary(null);
+          setStatus("error");
+          return;
+        }
+
+        const distanceText = formatDistance(result.distanceMeters);
+        const durationText = formatDuration(result.durationSeconds);
+
+        setPolyline(result.polyline);
+        setSummary({ distance: distanceText, duration: durationText });
+        setStatus("idle");
+
+        callbackRef.current?.({
+          distance: distanceText,
+          duration: durationText,
+          polyline: result.polyline,
+          distanceMeters: result.distanceMeters,
+          durationSeconds: result.durationSeconds,
+          legs: result.legs.map((leg) => ({
+            distanceMeters: leg.distanceMeters,
+            durationSeconds: leg.durationSeconds,
+            distanceText: formatDistance(leg.distanceMeters),
+            durationText: formatDuration(leg.durationSeconds),
+          })),
+        });
+      } catch (error) {
+        if (controller.signal.aborted || (error as Error)?.name === "AbortError") return;
+        console.error("Route lookup failed:", error);
+        setPolyline(null);
+        setSummary(null);
+        setStatus("error");
+      }
+    };
+
+    run();
+
+    return () => controller.abort();
+    // fromPlace/toPlace/stops are covered by the derived keys below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromKey, toKey, stopsKey, countriesKey]);
+
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  return (
+    <div className="w-full">
+      <div className="relative h-64 w-full overflow-hidden rounded-2xl border border-emerald-100">
+        {polyline ? (
+          <RideMiniMap polyline={polyline} className="h-full w-full" />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center bg-emerald-50 px-4 text-center text-sm text-emerald-700">
+            {status === "loading"
+              ? "Lasketaan reittiä…"
+              : status === "error"
+                ? "Reitin laskeminen ei onnistunut"
+                : "Valitse lähtöpaikka ja määränpää nähdäksesi reitin"}
+          </div>
+        )}
+      </div>
+
+      {summary && (
+        <p className="mt-2 text-sm text-neutral-600">
+          Matka: <span className="font-semibold">{summary.distance}</span>
+          {" · "}
+          Kesto: <span className="font-semibold">{summary.duration}</span>
+        </p>
+      )}
+    </div>
+  );
+}

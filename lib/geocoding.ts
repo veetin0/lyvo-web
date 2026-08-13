@@ -4,7 +4,7 @@
  * Google Places Autocomplete billed a session plus a Place Details fetch for
  * every location a driver typed. Photon is an OpenStreetMap geocoder that needs
  * no key and no account, and it returns coordinates directly — which is all the
- * downstream routing actually uses, since GoogleMapRide prefers `location` over
+ * downstream routing actually uses, since routing prefers `location` over
  * `placeId`.
  *
  * The endpoint is a constant so this can be pointed at a self-hosted Photon, or
