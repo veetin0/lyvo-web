@@ -188,8 +188,13 @@ interface Ride {
   id: string;
   from: string;
   to: string;
+  /** Formatted for display, fi-FI. Do not compare these — use departureAt. */
   date: string;
   time: string;
+  /** The actual departure instant, kept for filtering and sorting. */
+  departureAt: Date;
+  /** Departure day as YYYY-MM-DD, to compare against a date input's value. */
+  departureDay: string;
   price: number;
   car: string;
   options: string[];
@@ -268,7 +273,9 @@ const createDefaultFilters = (): RideFilters => ({
   to: "",
   date: "",
   time: "",
-  sort: "",
+  // Soonest departure first is the useful default for a ride search; the
+  // previous default left results in whatever order the API returned.
+  sort: "time",
   showFilters: false,
   minPrice: 0,
   maxPrice: 100,
@@ -444,6 +451,10 @@ const transformRideRow = (raw: Record<string, unknown>, fallbackCar: string): Ri
     to: toCity,
     date: departureDate.toLocaleDateString("fi-FI"),
     time: departureDate.toLocaleTimeString("fi-FI", { hour: "2-digit", minute: "2-digit" }),
+    departureAt: departureDate,
+    departureDay: `${departureDate.getFullYear()}-${String(departureDate.getMonth() + 1).padStart(2, "0")}-${String(
+      departureDate.getDate()
+    ).padStart(2, "0")}`,
     price: priceValue,
     car: carValue,
     driver: {
@@ -908,8 +919,15 @@ export default function EtsiKyyti() {
   const filteredRides = useMemo(() => {
     const fromTerm = filters.from.trim().toLowerCase();
     const toTerm = filters.to.trim().toLowerCase();
+    const now = new Date();
 
     let results = rides.filter((ride) => {
+      // A ride that has already left cannot be booked, so it has no business in
+      // a search result.
+      if (ride.departureAt < now) {
+        return false;
+      }
+
       const stopCities = (ride.stops ?? [])
         .map((stop) => stop.city?.toLowerCase().trim())
         .filter((city): city is string => Boolean(city));
@@ -927,7 +945,9 @@ export default function EtsiKyyti() {
       return (
         matchesFrom &&
         matchesTo &&
-        (!filters.date || ride.date === filters.date) &&
+        // The date input yields YYYY-MM-DD, so compare against departureDay
+        // rather than the fi-FI display string, which never matched.
+        (!filters.date || ride.departureDay === filters.date) &&
         ride.price >= filters.minPrice &&
         ride.price <= filters.maxPrice &&
         (filters.minSeats === 0 || (ride.seats && ride.seats >= filters.minSeats))
@@ -956,7 +976,11 @@ export default function EtsiKyyti() {
     }
 
     if (filters.sort === "price") results.sort((a, b) => a.price - b.price);
-    if (filters.sort === "time") results.sort((a, b) => a.time.localeCompare(b.time));
+    // Sort on the departure instant. Comparing the "11.30" display strings
+    // ordered rides by clock time and ignored the day entirely.
+    if (filters.sort === "time") {
+      results.sort((a, b) => a.departureAt.getTime() - b.departureAt.getTime());
+    }
     if (filters.sort === "rating") results.sort((a, b) => b.driver.rating - a.driver.rating);
 
     return results;
@@ -1020,10 +1044,10 @@ export default function EtsiKyyti() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-          <input type="text" name="from" value={filters.from} onChange={handleInputChange} placeholder={t.from} className="input rounded-xl shadow-inner focus:ring-emerald-300 focus:outline-none transition" />
-          <input type="text" name="to" value={filters.to} onChange={handleInputChange} placeholder={t.to} className="input rounded-xl shadow-inner focus:ring-emerald-300 focus:outline-none transition" />
-          <input type="date" name="date" value={filters.date} onChange={handleInputChange} className="input rounded-xl shadow-inner focus:ring-emerald-300 focus:outline-none transition" />
-          <input type="time" name="time" value={filters.time} onChange={handleInputChange} className="input rounded-xl shadow-inner focus:ring-emerald-300 focus:outline-none transition" />
+          <input type="text" name="from" aria-label={t.from} value={filters.from} onChange={handleInputChange} placeholder={t.from} className="input rounded-xl shadow-inner focus:ring-emerald-300 focus:outline-none transition" />
+          <input type="text" name="to" aria-label={t.to} value={filters.to} onChange={handleInputChange} placeholder={t.to} className="input rounded-xl shadow-inner focus:ring-emerald-300 focus:outline-none transition" />
+          <input type="date" name="date" aria-label={t.date} value={filters.date} onChange={handleInputChange} className="input rounded-xl shadow-inner focus:ring-emerald-300 focus:outline-none transition" />
+          <input type="time" name="time" aria-label={t.time} value={filters.time} onChange={handleInputChange} className="input rounded-xl shadow-inner focus:ring-emerald-300 focus:outline-none transition" />
         </div>
 
 
@@ -1187,7 +1211,10 @@ export default function EtsiKyyti() {
                       </p>
                     </div>
                     <div className="flex text-emerald-500 text-sm">
-                      {ride.driver?.rating !== undefined ? (
+                      {/* An unrated driver has rating 0, not undefined. Showing
+                          five empty stars and "(0.0)" reads as a bad rating
+                          rather than an absent one. */}
+                      {(ride.driver?.rating ?? 0) > 0 ? (
                         <>
                           {Array.from({ length: 5 }).map((_, i) => (
                             <span key={i}>{i < Math.round(ride.driver.rating || 0) ? "★" : "☆"}</span>
@@ -1440,7 +1467,7 @@ export default function EtsiKyyti() {
                       <p className="text-sm font-semibold text-emerald-800">
                         {selectedRide.driver?.name}
                       </p>
-                      {typeof selectedRide.driver?.rating === "number" ? (
+                      {(selectedRide.driver?.rating ?? 0) > 0 ? (
                         <p className="text-xs text-neutral-600">
                           {selectedRide.driver.rating.toFixed(1)} / 5 ★
                         </p>
