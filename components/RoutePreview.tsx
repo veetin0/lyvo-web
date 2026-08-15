@@ -1,12 +1,23 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 
 import { searchPlaces } from "@/lib/geocoding";
 import type { LatLng } from "@/lib/polyline";
 import { formatDistance, formatDuration, routeThrough } from "@/lib/routing";
-import { RideMiniMap } from "./RideMiniMap";
 import { PlaceSelection } from "./lib/places";
+
+// MapLibre is heavy and touches window on import, so it is loaded only when a
+// route is actually ready to draw.
+const RouteMap = dynamic(() => import("./RouteMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="absolute inset-0 flex items-center justify-center bg-emerald-50 text-sm text-emerald-700">
+      Ladataan karttaa…
+    </div>
+  ),
+});
 
 interface RouteLegInfo {
   distanceMeters: number;
@@ -64,10 +75,10 @@ const resolvePoint = async (
 /**
  * Route preview for the ride form.
  *
- * Replaces the Google map: routing comes from OSRM and the shape is drawn as
- * SVG, so nothing here needs an API key or a billing account. There is no
- * basemap behind the line — adding one would mean MapLibre plus a tile
- * provider, which is a separate decision.
+ * Replaces the Google map: routing comes from OSRM and the basemap from
+ * OpenFreeMap via MapLibre, so nothing here needs an API key or a billing
+ * account. Distance and duration are reported to the parent, which renders
+ * them itself — this component must not print them too.
  */
 export default function RoutePreview({
   onRouteSelected,
@@ -79,7 +90,6 @@ export default function RoutePreview({
   countryBiases = DEFAULT_COUNTRY_BIASES,
 }: RoutePreviewProps) {
   const [polyline, setPolyline] = useState<string | null>(null);
-  const [summary, setSummary] = useState<{ distance: string; duration: string } | null>(null);
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
 
   const abortRef = useRef<AbortController | null>(null);
@@ -109,7 +119,6 @@ export default function RoutePreview({
       if (controller.signal.aborted) return;
       if (!origin || !destination) {
         setPolyline(null);
-        setSummary(null);
         setStatus("idle");
         return;
       }
@@ -131,7 +140,6 @@ export default function RoutePreview({
 
         if (!result) {
           setPolyline(null);
-          setSummary(null);
           setStatus("error");
           return;
         }
@@ -140,7 +148,6 @@ export default function RoutePreview({
         const durationText = formatDuration(result.durationSeconds);
 
         setPolyline(result.polyline);
-        setSummary({ distance: distanceText, duration: durationText });
         setStatus("idle");
 
         callbackRef.current?.({
@@ -160,7 +167,6 @@ export default function RoutePreview({
         if (controller.signal.aborted || (error as Error)?.name === "AbortError") return;
         console.error("Route lookup failed:", error);
         setPolyline(null);
-        setSummary(null);
         setStatus("error");
       }
     };
@@ -178,7 +184,7 @@ export default function RoutePreview({
     <div className="w-full">
       <div className="relative h-64 w-full overflow-hidden rounded-2xl border border-emerald-100">
         {polyline ? (
-          <RideMiniMap polyline={polyline} className="h-full w-full" />
+          <RouteMap polyline={polyline} className="absolute inset-0" />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-emerald-50 px-4 text-center text-sm text-emerald-700">
             {status === "loading"
@@ -190,13 +196,6 @@ export default function RoutePreview({
         )}
       </div>
 
-      {summary && (
-        <p className="mt-2 text-sm text-neutral-600">
-          Matka: <span className="font-semibold">{summary.distance}</span>
-          {" · "}
-          Kesto: <span className="font-semibold">{summary.duration}</span>
-        </p>
-      )}
     </div>
   );
 }
