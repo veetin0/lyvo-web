@@ -4,7 +4,19 @@ import { useState, useMemo, useEffect, ChangeEvent, useRef, useCallback } from "
 import Link from "next/link";
 import Image from "next/image";
 import AlertBox from "@/components/AlertBox";
-import { RideMiniMap } from "@/components/RideMiniMap";
+import dynamic from "next/dynamic";
+
+// MapLibre is heavy and touches window on import, so the ride detail map is
+// loaded only when a ride is actually opened. RouteMap falls back to the plain
+// SVG route until the basemap reports itself loaded.
+const RouteMap = dynamic(() => import("@/components/RouteMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="absolute inset-0 flex items-center justify-center bg-emerald-50 text-sm text-emerald-700">
+      Ladataan karttaa…
+    </div>
+  ),
+});
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter, usePathname } from "next/navigation";
 import { CheckCircle2, X } from "lucide-react";
@@ -1400,7 +1412,7 @@ export default function EtsiKyyti() {
                   </h3>
                   {selectedRide.routePolyline ? (
                     <div className="h-52 w-full overflow-hidden rounded-2xl border border-emerald-100 md:h-64">
-                      <RideMiniMap polyline={selectedRide.routePolyline} className="h-full w-full" />
+                      <RouteMap polyline={selectedRide.routePolyline} className="relative h-full w-full" />
                     </div>
                   ) : (
                     <p className="text-sm text-neutral-500">{t.noRoutePreview}</p>

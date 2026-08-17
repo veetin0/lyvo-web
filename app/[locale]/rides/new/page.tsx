@@ -18,6 +18,12 @@ type RideStop = {
   city: string;
   price: string;
   place?: PlaceSelection | null;
+  /**
+   * Set once the driver edits this stop's price. The suggestion is only ever
+   * prefilled into a price nobody has touched — otherwise clearing the field
+   * refilled it on the next render, which made it impossible to empty.
+   */
+  priceTouched?: boolean;
 };
 
 type RouteLegInfo = {
@@ -308,6 +314,10 @@ export default function NewRide() {
       if (field === "city") {
         nextStop.place = null;
       }
+      if (field === "price") {
+        // Includes clearing it: an empty price the driver chose must survive.
+        nextStop.priceTouched = true;
+      }
       updated[index] = nextStop;
       return updated;
     });
@@ -424,13 +434,19 @@ export default function NewRide() {
     }
   }, [ride.from, ride.to, resetRouteEstimates]);
 
+  // Deliberately keyed on the route and the number of stops, never on `stops`
+  // itself: this effect writes to `stops`, so depending on it made every write
+  // re-run the effect. Combined with refilling any empty price, that fought the
+  // driver's typing and made the values jump around.
+  const stopCount = stops.length;
+
   useEffect(() => {
-    if (!stops.length || !routeLegs.length || perPassengerRate <= 0) {
-      setStopPriceSuggestions([]);
+    if (!stopCount || !routeLegs.length || perPassengerRate <= 0) {
+      setStopPriceSuggestions((prev) => (prev.length === 0 ? prev : []));
       return;
     }
 
-    const suggestions = stops.map((_, index) => {
+    const suggestions = Array.from({ length: stopCount }, (_, index) => {
       const remainingLegs = routeLegs.slice(index + 1);
       if (!remainingLegs.length) {
         return null;
@@ -455,7 +471,13 @@ export default function NewRide() {
       return suggested;
     });
 
-    setStopPriceSuggestions(suggestions);
+    // Keep the previous array when nothing actually changed, so the hint below
+    // the field does not re-render on every keystroke.
+    setStopPriceSuggestions((prev) =>
+      prev.length === suggestions.length && prev.every((value, i) => value === suggestions[i])
+        ? prev
+        : suggestions
+    );
 
     setStops((prev) => {
       let changed = false;
@@ -463,7 +485,8 @@ export default function NewRide() {
       const next = prev.map((stop, index) => {
         const suggestion = suggestions[index];
 
-        if (stop.price && stop.price.trim() !== "") {
+        // Never overwrite a price the driver has touched, even an empty one.
+        if (stop.priceTouched || (stop.price && stop.price.trim() !== "")) {
           return stop;
         }
 
@@ -480,7 +503,7 @@ export default function NewRide() {
 
       return changed ? next : prev;
     });
-  }, [stops, routeLegs, perPassengerRate]);
+  }, [routeLegs, perPassengerRate, stopCount]);
 
   // Progressbar: laske täyttöaste
   useEffect(() => {
