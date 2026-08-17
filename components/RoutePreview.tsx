@@ -171,7 +171,17 @@ export default function RoutePreview({
       }
     };
 
-    run();
+    // A superseded lookup rejects with AbortError. That is the intended outcome
+    // of aborting, not a failure, but it still has to be caught: run() was
+    // invoked bare, so the rejection escaped as an unhandled promise rejection.
+    run().catch((error: unknown) => {
+      if (controller.signal.aborted || (error as Error)?.name === "AbortError") {
+        return;
+      }
+      console.error("Route preview failed:", error);
+      setPolyline(null);
+      setStatus("error");
+    });
 
     return () => controller.abort();
     // fromPlace/toPlace/stops are covered by the derived keys below.

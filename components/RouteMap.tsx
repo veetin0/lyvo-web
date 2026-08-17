@@ -32,7 +32,10 @@ export default function RouteMap({ polyline, className }: RouteMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markersRef = useRef<Marker[]>([]);
-  const [ready, setReady] = useState(false);
+  // Bumped whenever the style reaches a new state, so a draw skipped because the
+  // style was mid-load is retried rather than dropped for good.
+  const [styleVersion, setStyleVersion] = useState(0);
+  const [drawn, setDrawn] = useState(false);
 
   const coordinates = useMemo(
     // GeoJSON wants [lng, lat].
@@ -58,21 +61,27 @@ export default function RouteMap({ polyline, className }: RouteMapProps) {
     });
     mapRef.current = map;
 
-    map.on("load", () => setReady(true));
+    const bump = () => setStyleVersion((v) => v + 1);
+    map.on("load", bump);
+    map.on("styledata", bump);
 
     return () => {
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current = [];
       map.remove();
       mapRef.current = null;
-      setReady(false);
+      setStyleVersion(0);
+      setDrawn(false);
     };
   }, []);
 
   // Feed the route in separately, so a new polyline updates the existing map.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !ready || coordinates.length < 2) {
+    // Source and layer calls throw "Style is not done loading" if they land
+    // before the style settles, so gate on the style itself. styleVersion above
+    // re-runs this once the style is ready, so an early skip is not permanent.
+    if (!map || !map.isStyleLoaded() || coordinates.length < 2) {
       return;
     }
 
@@ -125,7 +134,8 @@ export default function RouteMap({ polyline, className }: RouteMapProps) {
       new LngLatBounds(coordinates[0], coordinates[0])
     );
     map.fitBounds(bounds, { padding: 36, animate: false });
-  }, [coordinates, ready]);
+    setDrawn(true);
+  }, [coordinates, styleVersion]);
 
   return (
     <div className={className ?? "relative h-full w-full"}>
@@ -134,10 +144,10 @@ export default function RouteMap({ polyline, className }: RouteMapProps) {
           positioning and collapses the container to zero height. */}
       <div ref={containerRef} className="h-full w-full" />
 
-      {/* Until MapLibre reports itself loaded, show the dependency-free route
-          shape. If the basemap never initialises the user still sees the route
-          rather than an empty box. */}
-      {!ready && (
+      {/* Until the route is actually drawn on the basemap, show the
+          dependency-free route shape. If MapLibre never initialises the user
+          still sees the route rather than an empty box. */}
+      {!drawn && (
         <div className="absolute inset-0">
           <RideMiniMap polyline={polyline} className="h-full w-full" />
         </div>
