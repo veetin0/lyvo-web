@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
   renderBookingAccepted,
+  renderBookingCancelled,
   renderBookingRejected,
   renderBookingRequested,
 } from "./notificationTemplates";
@@ -14,7 +15,7 @@ import { sendEmail, type SendOutcome } from "./notifications";
  * or fail on its own merits, never because a lookup or a mail provider misbehaved.
  */
 
-export type BookingEvent = "requested" | "accepted" | "rejected";
+export type BookingEvent = "requested" | "accepted" | "rejected" | "cancelled";
 
 interface NotifyInput {
   event: BookingEvent;
@@ -62,19 +63,21 @@ export const notifyBookingEvent = async (
       departure: String(ride.departure ?? ""),
     };
 
-    if (event === "requested") {
-      // The driver is the one who needs to act, so they are the recipient.
+    if (event === "requested" || event === "cancelled") {
+      // Both concern the driver: one needs a decision, the other frees a seat.
       const { data: driver } = await supabase
         .from("User")
         .select("email")
         .eq("id", ride.owner)
         .maybeSingle();
 
-      const message = renderBookingRequested({
+      const context = {
         ...base,
         counterpartName: await nameForEmail(supabase, passengerEmail),
         link: appUrl("/fi/profile"),
-      });
+      };
+      const message =
+        event === "requested" ? renderBookingRequested(context) : renderBookingCancelled(context);
 
       return sendEmail({ to: driver?.email as string | undefined, ...message });
     }

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { isNotificationsConfigured, sendEmail } from "@/lib/notifications";
 import {
   renderBookingAccepted,
+  renderBookingCancelled,
   renderBookingRejected,
   renderBookingRequested,
 } from "@/lib/notificationTemplates";
@@ -143,6 +144,27 @@ describe("templates", () => {
     expect(accepted.subject).toContain("hyväksytty");
     expect(rejected.subject).toContain("hylätty");
     expect(accepted.text).not.toEqual(rejected.text);
+  });
+
+  it("tells the driver a seat came back when a passenger cancels", () => {
+    const mail = renderBookingCancelled({ ...context, counterpartName: "Matti" });
+
+    expect(mail.subject).toBe("Varaus peruttu: Helsinki → Tampere");
+    expect(mail.text).toContain("Matti");
+    expect(mail.text).toContain("vapaana");
+    // Must not read like the driver's own rejection.
+    expect(mail.text).not.toContain("hylät");
+  });
+
+  it("gives each event a distinct subject", () => {
+    const subjects = [
+      renderBookingRequested(context),
+      renderBookingAccepted(context),
+      renderBookingRejected(context),
+      renderBookingCancelled(context),
+    ].map((m) => m.subject);
+
+    expect(new Set(subjects).size).toBe(4);
   });
 
   it("leaves an unparseable departure untouched rather than printing Invalid Date", () => {

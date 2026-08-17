@@ -252,6 +252,15 @@ export async function DELETE(
     if (Array.isArray(removedHolding) && removedHolding.length > 0) {
       if (booking.ride_id) {
         await releaseSeat(supabase, booking.ride_id);
+
+        // Only worth telling the driver when a seat actually came back. A
+        // booking the driver already rejected releases nothing, so it would be
+        // a pointless email.
+        await notifyBookingEvent(supabase, {
+          event: "cancelled",
+          rideId: booking.ride_id,
+          passengerEmail: booking.user_email,
+        });
       }
       return NextResponse.json({ success: true });
     }

@@ -78,6 +78,25 @@ export const renderBookingAccepted = (context: BookingEmailContext): RenderedEma
   };
 };
 
+/** To the driver, when a passenger cancels and the seat comes back. */
+export const renderBookingCancelled = (context: BookingEmailContext): RenderedEmail => {
+  const who = context.counterpartName?.trim() || "Matkustaja";
+  return {
+    subject: `Varaus peruttu: ${route(context)}`,
+    text: [
+      `${who} perui varauksensa. Paikka on jälleen vapaana.`,
+      "",
+      `Reitti: ${route(context)}`,
+      `Lähtö: ${formatDeparture(context.departure)}`,
+      "",
+      "Näet kyytisi täältä:",
+      context.link,
+      "",
+      "— Lyvo",
+    ].join("\n"),
+  };
+};
+
 /** To the passenger, when the driver rejects. */
 export const renderBookingRejected = (context: BookingEmailContext): RenderedEmail => {
   const who = context.counterpartName?.trim() || "Kuljettaja";
