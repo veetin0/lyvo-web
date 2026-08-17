@@ -13,6 +13,7 @@ import RoutePreview from "@/components/RoutePreview";
 import LocationAutocomplete from "@/components/LocationAutocomplete";
 import StopLocationInput from "@/components/StopLocationInput";
 import { PlaceSelection } from "@/components/lib/places";
+import { RIDE_OPTION_KEYS, getRideOptionLabel } from "@/lib/rideOptions";
 
 type RideStop = {
   city: string;
@@ -385,6 +386,9 @@ export default function NewRide() {
         seats: ride.seats,
         price: Number(ride.price),
         car: carBrand || null,
+        // The toggles were collected but never sent, so every ride was stored
+        // with no options and the search filters could never match anything.
+        options: RIDE_OPTION_KEYS.filter((key) => ride.options[key]),
         stops,
         distanceMeters: distanceMeters !== null ? Math.round(distanceMeters) : null,
         durationSeconds: durationSeconds !== null ? Math.round(durationSeconds) : null,
@@ -980,24 +984,9 @@ export default function NewRide() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3 max-h-48 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-shade-300 scrollbar-track-shade-50 rounded-xl">
-            {[
-              { key: "electric", label: locale === "fi" ? "Sähköauto" : locale === "sv" ? "Elbilar" : "Electric car" },
-              { key: "van", label: locale === "fi" ? "Tila-auto" : locale === "sv" ? "Skåpbil" : "Van" },
-              { key: "pets", label: locale === "fi" ? "Lemmikit sallittu" : locale === "sv" ? "Husdjur tillåtna" : "Pets allowed" },
-              { key: "quiet", label: locale === "fi" ? "Hiljainen kyyti" : locale === "sv" ? "Tyst skjuts" : "Quiet ride" },
-              { key: "music", label: locale === "fi" ? "Musiikkia kyydissä" : locale === "sv" ? "Musik under skjutsen" : "Music during ride" },
-              { key: "ac", label: locale === "fi" ? "Ilmastointi" : locale === "sv" ? "Luftkonditionering" : "Air conditioning" },
-              { key: "talkative", label: locale === "fi" ? "Puhelias kuski" : locale === "sv" ? "Pratgladd förare" : "Chatty driver" },
-              { key: "smokeFree", label: locale === "fi" ? "Savuton kyyti" : locale === "sv" ? "Rökfri skjuts" : "Smoke-free" },
-              { key: "wifi", label: locale === "fi" ? "WiFi käytössä" : locale === "sv" ? "WiFi tillgängligt" : "WiFi available" },
-              { key: "charging", label: locale === "fi" ? "Latausmahdollisuus" : locale === "sv" ? "Laddningsalternativ" : "Phone charging" },
-              { key: "bikeSpot", label: locale === "fi" ? "Polkupyörän kuljetus mahdollista" : locale === "sv" ? "Cykelöverföring möjlig" : "Bike transportation" },
-              { key: "pickUp", label: locale === "fi" ? "Nouto sovittavissa" : locale === "sv" ? "Hämtning möjlig" : "Pickup available" },
-              { key: "restStop", label: locale === "fi" ? "Taukopysähdyksiä matkalla" : locale === "sv" ? "Rastpauser på vägen" : "Rest stops on route" },
-              { key: "startTime", label: locale === "fi" ? "Joustava lähtöaika" : locale === "sv" ? "Flexibel avgångstid" : "Flexible departure" },
-              { key: "bag", label: locale === "fi" ? "Tilaa laukuille" : locale === "sv" ? "Utrymme för bagage" : "Large luggage space" },
-              { key: "rentCar", label: locale === "fi" ? "Vuokra- tai yhteisauto" : locale === "sv" ? "Hyrbil eller delad bil" : "Rental/shared car" },
-            ].map((opt) => (
+            {/* Labels come from the shared catalogue so the form, the search
+                filters and the stored keys can never drift apart. */}
+            {RIDE_OPTION_KEYS.map((key) => ({ key, label: getRideOptionLabel(key, locale) })).map((opt) => (
               <button
                 type="button"
                 key={opt.key}

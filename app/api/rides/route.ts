@@ -4,6 +4,8 @@ import type { JWT } from "next-auth/jwt";
 import type { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+import { normalizeRideOptions } from "@/lib/rideOptions";
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -79,26 +81,6 @@ const readNumber = (value: unknown): number | null => {
   return null;
 };
 
-const normalizeOptions = (value: RideRow["options"]): string[] => {
-  if (!value) {
-    return [];
-  }
-  if (Array.isArray(value)) {
-    return value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
-  }
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed)
-        ? parsed.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
-        : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-};
-
 // Stops are stored as a JSON string on existing rows, so accept either form and
 // always hand the client a real array.
 const normalizeStops = (value: unknown): RideStop[] => {
@@ -141,7 +123,7 @@ const mapRideRow = (row: RideRow): RidePayload | null => {
     price,
     seats: seatsValue !== null ? Math.floor(seatsValue) : null,
     car: readString(row.car),
-    options: normalizeOptions(row.options),
+    options: normalizeRideOptions(row.options),
     owner: readString(row.owner),
     driverName: readString(row.driver_name),
     driverRating: readNumber(row.driver_rating),
@@ -235,9 +217,9 @@ export async function POST(req: Request): Promise<NextResponse> {
     const car = body.car ?? null;
     const routePolyline = readString(body.routePolyline);
     const stops = normalizeStops(body.stops);
-    const options = Array.isArray(body.options)
-      ? body.options.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
-      : [];
+    // Stored as stable keys, never localized labels: a ride created in the
+    // English UI must still match a filter built in Finnish.
+    const options = normalizeRideOptions(body.options);
 
     if (!from || !to || !date || !time) {
       return NextResponse.json({ error: "Missing required ride fields" }, { status: 400 });

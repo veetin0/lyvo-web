@@ -21,6 +21,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useRouter, usePathname } from "next/navigation";
 import { CheckCircle2, X } from "lucide-react";
 import { useSession } from "next-auth/react";
+import { getRideOptionLabel } from "@/lib/rideOptions";
 
 const translations = {
   fi: {
@@ -273,13 +274,6 @@ const rideFeatureLabelMap: Record<RideFeatureKey, { fi: string; en: string; sv: 
   popular: { fi: "Suosittu kyyti", en: "Popular ride", sv: "Populär skjuts" },
 };
 
-const dbOptionLabelMap: Record<Exclude<RideFeatureKey, "femaleDriver" | "popular">, string> = {
-  electric: "Sähköauto",
-  quiet: "Hiljainen kyyti",
-  pets: "Lemmikit sallittu",
-  van: "Tila-auto",
-};
-
 const createDefaultFilters = (): RideFilters => ({
   from: "",
   to: "",
@@ -316,30 +310,10 @@ interface ConversationResponse {
   } | null;
 }
 
-const optionLabelMap: Record<string, { fi: string; en: string; sv: string }> = {
-  electric: { fi: "Sähköauto", en: "Electric car", sv: "Elbil" },
-  van: { fi: "Tila-auto", en: "Van", sv: "Skåpbil" },
-  pets: { fi: "Lemmikit sallittu", en: "Pets allowed", sv: "Husdjur tillåtna" },
-  quiet: { fi: "Hiljainen kyyti", en: "Quiet ride", sv: "Tyst skjuts" },
-  music: { fi: "Musiikkia kyydissä", en: "Music during ride", sv: "Musik under skjutsen" },
-  ac: { fi: "Ilmastointi", en: "Air conditioning", sv: "Luftkonditionering" },
-  talkative: { fi: "Puhelias kuski", en: "Chatty driver", sv: "Pratglad förare" },
-  smokeFree: { fi: "Savuton kyyti", en: "Smoke-free", sv: "Rökfri skjuts" },
-  wifi: { fi: "WiFi käytössä", en: "WiFi available", sv: "WiFi tillgängligt" },
-  charging: { fi: "Latausmahdollisuus", en: "Phone charging", sv: "Laddningsalternativ" },
-  bikeSpot: { fi: "Polkupyörän kuljetus mahdollista", en: "Bike transportation", sv: "Cykeltransport möjlig" },
-  pickUp: { fi: "Nouto sovittavissa", en: "Pickup available", sv: "Hämtning möjlig" },
-  restStop: { fi: "Taukopysähdyksiä matkalla", en: "Rest stops on route", sv: "Raststopp längs vägen" },
-  startTime: { fi: "Joustava lähtöaika", en: "Flexible departure", sv: "Flexibel avgångstid" },
-  bag: { fi: "Tilaa laukuille", en: "Large luggage space", sv: "Utrymme för bagage" },
-  rentCar: { fi: "Vuokra- tai yhteisauto", en: "Rental/shared car", sv: "Hyr-/delad bil" },
-  femaleDriver: { fi: "Naiskuljettaja", en: "Female driver", sv: "Kvinnlig förare" },
-  popular: { fi: "Suosittu kyyti", en: "Popular ride", sv: "Populär skjuts" },
-};
-
-const getOptionLabel = (option: string, locale: keyof typeof translations): string => {
-  return optionLabelMap[option]?.[locale] ?? option;
-};
+// Labels live in lib/rideOptions so the form, these filters and the stored
+// keys share one source of truth.
+const getOptionLabel = (option: string, locale: keyof typeof translations): string =>
+  getRideOptionLabel(option, locale);
 
 const formatDistance = (meters?: number | null): string | null => {
   if (!Number.isFinite(meters ?? NaN) || !meters || meters <= 0) {
@@ -967,16 +941,16 @@ export default function EtsiKyyti() {
     });
 
     if (filters.electric) {
-      results = results.filter((ride) => ride.options.includes(dbOptionLabelMap.electric));
+      results = results.filter((ride) => ride.options.includes("electric"));
     }
     if (filters.quiet) {
-      results = results.filter((ride) => ride.options.includes(dbOptionLabelMap.quiet));
+      results = results.filter((ride) => ride.options.includes("quiet"));
     }
     if (filters.pets) {
-      results = results.filter((ride) => ride.options.includes(dbOptionLabelMap.pets));
+      results = results.filter((ride) => ride.options.includes("pets"));
     }
     if (filters.van) {
-      results = results.filter((ride) => ride.options.includes(dbOptionLabelMap.van));
+      results = results.filter((ride) => ride.options.includes("van"));
     }
     if (filters.femaleDriver) {
       results = results.filter((ride) =>
