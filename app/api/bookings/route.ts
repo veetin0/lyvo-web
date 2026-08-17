@@ -5,6 +5,7 @@ import type { JWT } from "next-auth/jwt";
 import type { NextRequest } from "next/server";
 
 import { reserveSeat } from "@/lib/seats";
+import { notifyBookingEvent } from "@/lib/bookingNotifications";
 
 interface RideSummaryRow {
   id: string;
@@ -356,6 +357,14 @@ export async function POST(req: Request): Promise<NextResponse> {
 
       return NextResponse.json({ error: "Unable to reserve seat" }, { status: 500 });
     }
+
+    // Told after the seat is secured, so nobody is emailed about a booking that
+    // did not happen. notifyBookingEvent never throws.
+    await notifyBookingEvent(supabase, {
+      event: "requested",
+      rideId,
+      passengerEmail: token.email,
+    });
 
     return NextResponse.json({ success: true, booking });
   } catch (error) {

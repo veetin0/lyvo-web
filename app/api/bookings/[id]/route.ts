@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import type { JWT } from "next-auth/jwt";
 
 import { releaseSeat, SEAT_HOLDING_STATUSES } from "@/lib/seats";
+import { notifyBookingEvent } from "@/lib/bookingNotifications";
 
 type AuthToken = (JWT & { id?: string | null; email?: string | null }) | null;
 
@@ -12,6 +13,7 @@ interface BookingWithRideOwner {
   id: string;
   ride_id?: string | null;
   status: string;
+  user_email?: string | null;
   ride?: {
     id: string;
     owner?: string | null;
@@ -65,6 +67,7 @@ const parseBookingWithRideOwner = (data: unknown): BookingWithRideOwner | null =
     id,
     ride_id: rideId,
     status,
+    user_email: typeof record.user_email === "string" ? record.user_email : null,
     ride,
   };
 };
@@ -126,6 +129,7 @@ export async function PUT(
         id,
         ride_id,
         status,
+        user_email,
         ride:ride_id (
           id,
           owner
@@ -174,6 +178,16 @@ export async function PUT(
     // a state that was still holding a seat.
     if (action === "reject" && booking.ride_id) {
       await releaseSeat(supabase, booking.ride_id);
+    }
+
+    // Sent only because the transition above actually applied, so a repeated
+    // decision cannot email the passenger twice.
+    if (booking.ride_id) {
+      await notifyBookingEvent(supabase, {
+        event: action === "accept" ? "accepted" : "rejected",
+        rideId: booking.ride_id,
+        passengerEmail: booking.user_email,
+      });
     }
 
     return NextResponse.json({ success: true, status: newStatus });
