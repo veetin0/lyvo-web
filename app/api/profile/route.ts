@@ -3,6 +3,7 @@ import { getToken } from "next-auth/jwt";
 import type { JWT } from "next-auth/jwt";
 import type { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getDriverRatings } from "@/lib/ratings";
 
 type AuthToken = (JWT & { id?: string | null; email?: string | null }) | null;
 
@@ -12,10 +13,6 @@ interface UserProfileRow {
   email?: string | null;
   bio?: string | null;
   profile_picture_data?: string | null;
-}
-
-interface RideRatingRow {
-  driver_rating?: number | null;
 }
 
 const supabase = createClient(
@@ -62,22 +59,13 @@ export async function GET(req: Request): Promise<NextResponse> {
     let driverRatingCount = 0;
 
     if (userRow?.id) {
-      const { data: ratingRows, error: ratingError } = await supabase
-        .from("rides")
-        .select("driver_rating")
-        .eq("owner", userRow.id)
-        .not("driver_rating", "is", null);
-
-      if (!ratingError && Array.isArray(ratingRows)) {
-        const rated = ratingRows
-          .map((row) => (row as RideRatingRow).driver_rating)
-          .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value > 0);
-
-        if (rated.length > 0) {
-          const total = rated.reduce((acc: number, value: number) => acc + value, 0);
-          driverRating = Number((total / rated.length).toFixed(1));
-          driverRatingCount = rated.length;
-        }
+      // Averaged from the ratings table. The old source, rides.driver_rating,
+      // is never written and would report every driver as unrated.
+      const ratings = await getDriverRatings(supabase, [userRow.id]);
+      const summary = ratings.get(userRow.id);
+      if (summary) {
+        driverRating = summary.average;
+        driverRatingCount = summary.count;
       }
     }
 

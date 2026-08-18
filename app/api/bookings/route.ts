@@ -6,6 +6,7 @@ import type { NextRequest } from "next/server";
 
 import { reserveSeat } from "@/lib/seats";
 import { notifyBookingEvent } from "@/lib/bookingNotifications";
+import { getDriverRatings, getRatedBookingIds } from "@/lib/ratings";
 
 interface RideSummaryRow {
   id: string;
@@ -46,11 +47,6 @@ interface RiderProfileSummary {
 }
 
 type RiderProfilesByEmail = Record<string, RiderProfileSummary>;
-
-interface RideRatingRow {
-  owner?: string | null;
-  driver_rating?: number | null;
-}
 
 type AuthToken = (JWT & { id?: string | null; email?: string | null }) | null;
 
@@ -173,41 +169,19 @@ export async function GET(req: Request): Promise<NextResponse> {
               .filter((id): id is string => typeof id === "string" && id.length > 0);
 
           if (riderIds.length > 0) {
-            const { data: ratingRows, error: ratingError } = await supabase
-              .from("rides")
-              .select("owner, driver_rating")
-              .in("owner", riderIds)
-              .not("driver_rating", "is", null);
+            // Averaged from the ratings table. rides.driver_rating is legacy and
+            // never written, so it reported everyone as unrated.
+            const ratings = await getDriverRatings(supabase, riderIds);
 
-            if (ratingError) {
-              console.error("Error fetching rider ratings:", ratingError);
-            } else if (Array.isArray(ratingRows)) {
-              const ratingAccumulator = new Map<string, { total: number; count: number }>();
-
-                for (const row of ratingRows as RideRatingRow[]) {
-                  const ownerId = row?.owner;
-                  const ratingValue = row?.driver_rating;
-                if (typeof ownerId === "string" && typeof ratingValue === "number" && ratingValue > 0) {
-                  const current = ratingAccumulator.get(ownerId) ?? { total: 0, count: 0 };
-                  ratingAccumulator.set(ownerId, {
-                    total: current.total + ratingValue,
-                    count: current.count + 1,
-                  });
-                  }
-                }
-
-                for (const profile of typedProfiles) {
-                const stats = ratingAccumulator.get(profile.id);
-                if (stats && stats.count > 0) {
-                  const emailKey = profile.email?.toLowerCase();
-                  if (emailKey && riderProfilesByEmail[emailKey]) {
-                    riderProfilesByEmail[emailKey] = {
-                      ...riderProfilesByEmail[emailKey],
-                      driverRating: Number((stats.total / stats.count).toFixed(1)),
-                      driverRatingCount: stats.count,
-                    };
-                  }
-                }
+            for (const profile of typedProfiles) {
+              const summary = ratings.get(profile.id);
+              const emailKey = profile.email?.toLowerCase();
+              if (summary && emailKey && riderProfilesByEmail[emailKey]) {
+                riderProfilesByEmail[emailKey] = {
+                  ...riderProfilesByEmail[emailKey],
+                  driverRating: summary.average,
+                  driverRatingCount: summary.count,
+                };
               }
             }
           }
@@ -255,8 +229,28 @@ export async function GET(req: Request): Promise<NextResponse> {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-  debugLog("Bookings found for", token.email, ":", bookings);
-    return NextResponse.json(bookings || []);
+    // Tell the client what it may offer to rate, rather than letting it guess:
+    // a rating needs an accepted booking on a ride that has already departed,
+    // and one that has not been rated yet. POST /api/ratings re-checks all of it.
+    const bookingList = Array.isArray(bookings) ? (bookings as unknown as BookingRow[]) : [];
+    const alreadyRated = await getRatedBookingIds(supabase, token.email);
+    const now = Date.now();
+
+    const withRatingState = bookingList.map((booking) => {
+      const departureRaw = booking.ride?.departure ?? null;
+      const departure = departureRaw ? new Date(departureRaw).getTime() : Number.NaN;
+      const hasDeparted = Number.isFinite(departure) && departure <= now;
+      const rated = alreadyRated.has(booking.id);
+
+      return {
+        ...booking,
+        rated,
+        canRate: booking.status === "accepted" && hasDeparted && !rated,
+      };
+    });
+
+  debugLog("Bookings found for", token.email, ":", withRatingState);
+    return NextResponse.json(withRatingState);
   } catch (error) {
     console.error("Error fetching bookings:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

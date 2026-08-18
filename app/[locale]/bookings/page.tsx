@@ -28,6 +28,11 @@ const translations = {
     upcomingEmpty: "Ei tulevia varauksia juuri nyt.",
     pastTitle: "Menneet kyydit",
     pastEmpty: "Ei menneitä varauksia vielä.",
+    rateTitle: "Millainen kyyti oli?",
+    rateThanks: "Kiitos arviostasi!",
+    rateError: "Arvion tallentaminen epäonnistui. Yritä uudelleen.",
+    rateStar: "{n} tähteä",
+    rateStarOne: "1 tähti",
     cancel: "Peru varaus",
     cancelling: "Perutaan...",
     cancelledSuccess: "Varaus peruttu.",
@@ -60,6 +65,11 @@ const translations = {
     upcomingEmpty: "No upcoming bookings right now.",
     pastTitle: "Past rides",
     pastEmpty: "No past bookings yet.",
+    rateTitle: "How was the ride?",
+    rateThanks: "Thanks for rating!",
+    rateError: "Could not save your rating. Try again.",
+    rateStar: "{n} stars",
+    rateStarOne: "1 star",
     cancel: "Cancel booking",
     cancelling: "Cancelling...",
     cancelledSuccess: "Booking cancelled.",
@@ -92,6 +102,11 @@ const translations = {
     upcomingEmpty: "Inga kommande bokningar just nu.",
     pastTitle: "Tidigare resor",
     pastEmpty: "Inga tidigare bokningar ännu.",
+    rateTitle: "Hur var resan?",
+    rateThanks: "Tack för ditt omdöme!",
+    rateError: "Det gick inte att spara omdömet. Försök igen.",
+    rateStar: "{n} stjärnor",
+    rateStarOne: "1 stjärna",
     cancel: "Avbryt bokning",
     cancelling: "Avbryter...",
     cancelledSuccess: "Bokningen avbröts.",
@@ -122,6 +137,10 @@ type Booking = {
   created_at?: string;
   status: BookingStatus;
   ride?: RideSummary | null;
+  /** Set by the API: this booking already carries a rating. */
+  rated?: boolean;
+  /** Set by the API: accepted, departed and not yet rated. */
+  canRate?: boolean;
 };
 
 const statusArtifacts: Record<BookingStatus, { color: string; icon: ReactNode }> = {
@@ -152,6 +171,9 @@ export default function BookingsPage() {
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const [alertType, setAlertType] = useState<"success" | "error">("success");
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [ratingId, setRatingId] = useState<string | null>(null);
+  // Marked locally on success so the stars swap to a thank-you without a refetch.
+  const [justRated, setJustRated] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (status === "loading") {
@@ -256,6 +278,31 @@ export default function BookingsPage() {
       departure.getTime() > Date.now() &&
       (booking.status === "pending" || booking.status === "accepted")
     );
+  };
+
+  const handleRate = async (bookingId: string, rating: number) => {
+    try {
+      setRatingId(bookingId);
+      const response = await fetch("/api/ratings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bookingId, rating }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      setJustRated((prev) => ({ ...prev, [bookingId]: rating }));
+      setAlertType("success");
+      setAlertMessage(t.rateThanks);
+    } catch (error) {
+      console.error("Failed to save rating:", error);
+      setAlertType("error");
+      setAlertMessage(t.rateError);
+    } finally {
+      setRatingId(null);
+    }
   };
 
   const handleCancel = async (bookingId: string) => {
@@ -445,9 +492,45 @@ export default function BookingsPage() {
                           </p>
                         )}
                       </div>
-                      <p className="text-base font-semibold text-emerald-700">
-                        {t.priceLabel}: {ride?.price_eur != null ? `${ride.price_eur} €` : "—"}
-                      </p>
+                      <div className="flex flex-col gap-3 items-start md:items-end">
+                        <p className="text-base font-semibold text-emerald-700">
+                          {t.priceLabel}: {ride?.price_eur != null ? `${ride.price_eur} €` : "—"}
+                        </p>
+                        {(booking.canRate || justRated[booking.id]) && (
+                          <div className="flex flex-col items-start gap-1 md:items-end">
+                            {justRated[booking.id] ? (
+                              <p className="text-sm font-medium text-emerald-700">
+                                {t.rateThanks}{" "}
+                                <span aria-hidden="true">
+                                  {"\u2605".repeat(justRated[booking.id])}
+                                </span>
+                              </p>
+                            ) : (
+                              <>
+                                <p className="text-sm text-neutral-600">{t.rateTitle}</p>
+                                <div className="flex gap-1">
+                                  {[1, 2, 3, 4, 5].map((value) => (
+                                    <button
+                                      key={value}
+                                      type="button"
+                                      onClick={() => handleRate(booking.id, value)}
+                                      disabled={ratingId === booking.id}
+                                      aria-label={value === 1 ? t.rateStarOne : t.rateStar.replace("{n}", String(value))}
+                                      className={`text-2xl leading-none transition-colors ${
+                                        ratingId === booking.id
+                                          ? "cursor-wait text-neutral-300"
+                                          : "text-emerald-500 hover:text-emerald-600"
+                                      }`}
+                                    >
+                                      {"\u2606"}
+                                    </button>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </motion.div>
                 );

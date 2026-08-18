@@ -5,6 +5,7 @@ import type { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 import { normalizeRideOptions } from "@/lib/rideOptions";
+import { getDriverRatings } from "@/lib/ratings";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -49,6 +50,7 @@ interface RidePayload {
   owner: string | null;
   driverName: string | null;
   driverRating: number | null;
+  driverRatingCount: number;
   createdAt: string | null;
   distanceMeters: number | null;
   durationSeconds: number | null;
@@ -126,7 +128,10 @@ const mapRideRow = (row: RideRow): RidePayload | null => {
     options: normalizeRideOptions(row.options),
     owner: readString(row.owner),
     driverName: readString(row.driver_name),
-    driverRating: readNumber(row.driver_rating),
+    // Filled in from the ratings table after mapping; the legacy per-ride
+    // driver_rating column is never written and is not read here.
+    driverRating: null,
+    driverRatingCount: 0,
     createdAt: readString(row.created_at),
     distanceMeters: readNumber(row.distance_meters),
     durationSeconds: readNumber(row.duration_seconds),
@@ -174,6 +179,20 @@ export async function GET(req: Request): Promise<NextResponse> {
       }
       return acc;
     }, []);
+
+    // One query for every driver on the page, rather than one per ride.
+    const ratings = await getDriverRatings(
+      supabase,
+      payload.map((ride) => ride.owner).filter((owner): owner is string => Boolean(owner))
+    );
+
+    for (const ride of payload) {
+      const rating = ride.owner ? ratings.get(ride.owner) : undefined;
+      if (rating) {
+        ride.driverRating = rating.average;
+        ride.driverRatingCount = rating.count;
+      }
+    }
 
     return NextResponse.json(payload);
   } catch (error) {
