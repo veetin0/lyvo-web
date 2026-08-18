@@ -2,6 +2,8 @@ import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+import { checkRateLimit, clientIp } from "@/lib/rateLimit";
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -35,8 +37,27 @@ const isStrongPassword = (value: string) => {
   );
 };
 
+// Generous enough that a household behind one address is unaffected, tight
+// enough that scripted signups are not free.
+const REGISTER_LIMIT = 5;
+const REGISTER_WINDOW_SECONDS = 15 * 60;
+
 export async function POST(req: Request) {
   try {
+    const ip = clientIp(req.headers);
+    const limit = await checkRateLimit(supabase, {
+      key: `register:ip:${ip}`,
+      limit: REGISTER_LIMIT,
+      windowSeconds: REGISTER_WINDOW_SECONDS,
+    });
+
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: "Liian monta rekisteröintiyritystä. Yritä myöhemmin uudelleen." },
+        { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+      );
+    }
+
     const payload = await req.json();
     const rawName = typeof payload?.name === "string" ? payload.name : "";
     const rawEmail = typeof payload?.email === "string" ? payload.email : "";

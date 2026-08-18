@@ -14,8 +14,10 @@ const handler = NextAuth({
         email: { label: "Sähköposti", type: "email" },
         password: { label: "Salasana", type: "password" },
       },
-      async authorize(credentials) {
-        return authorizeWithSupabase(credentials);
+      async authorize(credentials, request) {
+        // request carries the headers, which the rate limiter needs for the
+        // client address.
+        return authorizeWithSupabase(credentials, request);
       },
     }),
     GoogleProvider({

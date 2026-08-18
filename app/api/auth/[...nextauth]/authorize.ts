@@ -1,6 +1,8 @@
 import bcrypt from "bcryptjs";
 import { createClient } from "@supabase/supabase-js";
 
+import { checkRateLimit, clientIp } from "@/lib/rateLimit";
+
 export interface CredentialsPayload {
   email?: string | null;
   password?: string | null;
@@ -106,13 +108,47 @@ export const ensureOAuthUser = async (
   return typeof data?.id === "string" ? data.id : null;
 };
 
+/**
+ * Two buckets, because they stop different things.
+ *
+ * Per address slows a script working through a password list against one
+ * account. Per source slows one host spraying many accounts. Both are
+ * deliberately looser than a human ever needs.
+ */
+const LOGIN_EMAIL_LIMIT = 10;
+const LOGIN_IP_LIMIT = 30;
+const LOGIN_WINDOW_SECONDS = 15 * 60;
+
 export const authorizeWithSupabase = async (
-  credentials: CredentialsPayload | null | undefined
+  credentials: CredentialsPayload | null | undefined,
+  request?: { headers?: Record<string, string | string[] | undefined> | Headers }
 ) => {
   const email = normalizeEmail(credentials?.email ?? null);
   const password = credentials?.password ?? null;
 
   if (!email || typeof password !== "string" || password.length === 0) {
+    return null;
+  }
+
+  // Returning null here reads to NextAuth as "wrong credentials", so a throttled
+  // attempt is indistinguishable from a failed one — which also avoids telling
+  // an attacker when they have hit the limit.
+  const ip = clientIp(request?.headers ?? {});
+  const [byEmail, byIp] = await Promise.all([
+    checkRateLimit(supabase, {
+      key: `login:email:${email}`,
+      limit: LOGIN_EMAIL_LIMIT,
+      windowSeconds: LOGIN_WINDOW_SECONDS,
+    }),
+    checkRateLimit(supabase, {
+      key: `login:ip:${ip}`,
+      limit: LOGIN_IP_LIMIT,
+      windowSeconds: LOGIN_WINDOW_SECONDS,
+    }),
+  ]);
+
+  if (!byEmail.allowed || !byIp.allowed) {
+    console.warn(`Login throttled for ${email} from ${ip}`);
     return null;
   }
 
